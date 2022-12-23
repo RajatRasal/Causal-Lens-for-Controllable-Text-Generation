@@ -1,8 +1,8 @@
 from dataclasses import dataclass
-from typing import Iterator
+from typing import Iterator, List
 
 import torch
-from torch.utils.data import IterableDataset
+from torch.utils.data import DataLoader, IterableDataset
 from transformers import PreTrainedTokenizer
 
 from .tokeniser import bert_pretrained_tokeniser, gpt2_pretrained_tokeniser
@@ -13,6 +13,30 @@ class Tokens:
     enc_tokens: torch.Tensor
     dec_tokens: torch.Tensor
     sentence: torch.Tensor
+
+
+@dataclass
+class TokensBatch:
+    enc_tokens_batch: torch.Tensor
+    dec_tokens_batch: torch.Tensor
+    sentences: List[str]
+
+
+def collate_tokens(tokens_list: List[Tokens]) -> TokensBatch:
+    enc_tokens_list = []
+    dec_tokens_list = []
+    sentences = []
+
+    for tokens in tokens_list:
+        enc_tokens_list.append(tokens.enc_tokens)
+        dec_tokens_list.append(tokens.dec_tokens)
+        sentences.append(tokens.sentence)
+
+    return TokensBatch(
+        enc_tokens_batch=torch.stack(enc_tokens_list),
+        dec_tokens_batch=torch.stack(dec_tokens_list),
+        sentences=sentences,
+    )
 
 
 class TokenisedSentences(IterableDataset):
@@ -55,7 +79,9 @@ if __name__ == "__main__":
     file = "./data/wikipedia.segmented.nltk.txt"
     dataset = TokenisedSentences(file, tokeniser_encoder, tokeniser_decoder)
 
-    for tokens, _ in zip(dataset, range(10)):
-        print(tokens.enc_tokens.shape)
-        print(tokens.dec_tokens.shape)
-        print(len(tokens.sentence.split(" ")))
+    dataloader = DataLoader(dataset, batch_size=5, collate_fn=collate_tokens)
+
+    for batch, _ in zip(dataloader, range(10)):
+        print(batch.enc_tokens_batch.shape)
+        print(batch.dec_tokens_batch.shape)
+        print(len(batch.sentences))
