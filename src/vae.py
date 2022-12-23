@@ -1,40 +1,45 @@
-from typing import List
-
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from transformers import (  # noqa: E501
+    BertConfig,
     BertModel,
     BertTokenizer,
+    GPT2Config,
     GPT2LMHeadModel,
     GPT2Tokenizer,
 )
 
+from .data import TokenisedSentences, collate_tokens
+from .tokeniser import bert_pretrained_tokeniser, gpt2_pretrained_tokeniser
 
-class VAE(pl.LightningModule):
-    def __init__(self, latent_size: int = 32):
+
+class BertGPT2VAE(pl.LightningModule):
+    def __init__(
+        self,
+        tokeniser_encoder: BertTokenizer,
+        tokeniser_decoder: GPT2Tokenizer,
+        latent_size: int = 32,
+    ):
         super().__init__()
         self.save_hyperparameters()
 
-        # Encoder Tokeniser
-        self.tokeniser_encoder = BertTokenizer.from_pretrained(
-            "bert-base-uncased"
-        )
-
         # Encoder Model
-        self.model_encoder = BertModel.from_pretrained("bert-base-uncased")
-
-        # Decoder Tokeniser
-        self.tokeniser_decoder = GPT2Tokenizer.from_pretrained("gpt2")
-        self.tokeniser_decoder.add_special_tokens(
-            {"pad_token": "<PAD>", "bos_token": "<BOS>", "eos_token": "<EOS>"}
+        bert_config = BertConfig()
+        self.model_encoder = BertModel(
+            bert_config, self.hparams.tokeniser_encoder
         )
 
         # Decoder Model
-        self.model_decoder = GPT2LMHeadModel.from_pretrained("gpt2")
-        self.model_decoder.resize_token_embeddings(len(self.tokeniser_decoder))
+        gpt2_config = GPT2Config()
+        self.model_decoder = GPT2LMHeadModel(
+            gpt2_config
+        )  # , self.hparams.tokeniser_decoder)
+        self.model_decoder.resize_token_embeddings(
+            len(self.hparams.tokeniser_decoder)
+        )
 
         # Bottleneck
         self.latent_proj = nn.Linear(
@@ -57,23 +62,10 @@ class VAE(pl.LightningModule):
         eps = torch.randn_like(std)
         return eps.mul(std).add_(mean)
 
-    def _step(self, sentences: List[str]):  # , batch_idx):
-        # Tokenise for encoder and decoder
-        enc_tokens = self.tokeniser_encoder(
-            sentences,
-            padding=True,
-            truncation=True,
-            return_tensors="pt",
-        )
-        dec_tokens = self.tokeniser_decoder(
-            sentences,
-            padding=True,
-            return_tensors="pt",
-        )
-
+    def _step(self, enc_tokens: torch.Tensor, dec_tokens: torch.Tensor):
         # Encoding
         pooled_encoder_output = self.model_encoder(
-            **enc_tokens, output_hidden_states=True
+            enc_tokens, output_hidden_states=True
         ).pooler_output
 
         # Bottleneck
@@ -91,36 +83,36 @@ class VAE(pl.LightningModule):
         m = tuple(zip(m, m))
 
         # Decoding
-        # print(dec_tokens["attention_mask"])
-        # outputs = self.model_decoder(**dec_tokens, past_key_values=xx,
-        # labels=dec_tokens["input_ids"], return_dict=True)
         outputs = self.model_decoder(
-            dec_tokens["input_ids"],
+            dec_tokens,
             past_key_values=m,
-            labels=dec_tokens["input_ids"],
+            labels=dec_tokens,
             return_dict=True,
         )
         return outputs
-        # return outputs["loss"]
 
     def training_step(self, batch, batch_idx):
-        return self._step(batch)["loss"]
+        return self._step(batch.enc_tokens_batch, batch.dec_tokens_batch)[
+            "loss"
+        ]
 
     def validation_step(self, batch, batch_idx):
-        logits = self._step(batch).logits
+        logits = self._step(
+            batch.enc_tokens_batch, batch.dec_tokens_batch
+        ).logits
         softmax = F.softmax(logits)
         argmax = torch.argmax(softmax, dim=2)
-        recons = self.tokeniser_decoder.batch_decode(
+        recons = self.hparams.tokeniser_decoder.batch_decode(
             argmax.tolist(), skip_special_tokens=True
         )
-        for orig, recon in zip(batch, recons):
+        for orig, recon in zip(batch.sentences, recons):
             print()
-            print(orig)
-            print("".join(recon))
+            print("Original:", orig)
+            print("Reconstr:", "".join(recon))
             print()
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=5e-2)
+        return torch.optim.AdamW(self.parameters(), lr=5e-5)
 
 
 class MyDataset(Dataset):
@@ -135,27 +127,39 @@ class MyDataset(Dataset):
 
 
 if __name__ == "__main__":
-    model = VAE()
+    # TODO: Output kl, loss, elbo etc. to Tensorboard
+    # TODO: Output 1000 example sentences to Tensorboard
+    # TODO: Example interpolation from paper - get z for default sentence then
+    # vary it.
+    # TODO: Varying beta during training runs
+    # TODO: Create a dataset for BERTTokenised sentences, create another for
+    # GPTTokenised sentences
+    # Each dataset will cache the tokens in a folder, and include a link to
+    # the original source file in that folder. The tokens in the folder will
+    # be in chunked files.
 
-    # lines = []
-    # with open("./data/wikipedia.segmented.nltk.txt", "r") as f:
-    #     for i in range(100):
-    #         line = f.readline()
-    #         tokens = model.tokeniser_encoder.encode(line)
-    #         if len(tokens) <= 64:
-    #             print(i, line)
-    #             lines.append(line[:-1])
-
-    lines = [
-        "the little girl plays with the toys",
-        "the children are watching a show.",
-    ]
-    dataset = MyDataset(lines)
+    # Dataset and dataloader
+    tokeniser_encoder = bert_pretrained_tokeniser()
+    tokeniser_decoder = gpt2_pretrained_tokeniser()
+    file = "./data/wikipedia.segmented.nltk.txt"
+    dataset = TokenisedSentences(file, tokeniser_encoder, tokeniser_decoder)
     train_dataloader = DataLoader(
-        dataset, batch_size=5, collate_fn=lambda xs: xs
+        dataset, batch_size=5, collate_fn=collate_tokens
     )
+
+    # Defining the model
+    model = BertGPT2VAE(tokeniser_encoder, tokeniser_decoder)
+
+    # Some lines for verification
+    lines = [
+        dataset.build_tokens("the little girl plays with the toys."),
+        dataset.build_tokens("the children are watching a show."),
+    ]
     val_dataloader = DataLoader(  # noqa: E501
-        dataset, batch_size=5, collate_fn=lambda xs: xs
+        lines,
+        batch_size=5,
+        collate_fn=collate_tokens,
     )
+
     trainer = pl.Trainer(max_epochs=40, check_val_every_n_epoch=1)
     trainer.fit(model, train_dataloader, val_dataloader)

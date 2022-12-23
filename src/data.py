@@ -33,8 +33,8 @@ def collate_tokens(tokens_list: List[Tokens]) -> TokensBatch:
         sentences.append(tokens.sentence)
 
     return TokensBatch(
-        enc_tokens_batch=torch.stack(enc_tokens_list),
-        dec_tokens_batch=torch.stack(dec_tokens_list),
+        enc_tokens_batch=torch.stack(enc_tokens_list).squeeze(1),
+        dec_tokens_batch=torch.stack(dec_tokens_list).squeeze(1),
         sentences=sentences,
     )
 
@@ -58,18 +58,21 @@ class TokenisedSentences(IterableDataset):
         self.tokeniser_encoder = tokeniser_encoder
         self.tokeniser_decoder = tokeniser_decoder
 
+    def build_tokens(self, line: str) -> Tokens:
+        return Tokens(
+            enc_tokens=self.tokeniser_encoder.encode(
+                text=line, **self.TOKENISER_ARGS
+            ),
+            dec_tokens=self.tokeniser_decoder.encode(
+                text=line, **self.TOKENISER_ARGS
+            ),
+            sentence=line,
+        )
+
     def __iter__(self) -> Iterator[Tokens]:
         with open(self.file) as f:
             while line := f.readline().replace("\n", ""):
-                yield Tokens(
-                    enc_tokens=self.tokeniser_encoder.encode(
-                        text=line, **self.TOKENISER_ARGS
-                    ),
-                    dec_tokens=self.tokeniser_decoder.encode(
-                        text=line, **self.TOKENISER_ARGS
-                    ),
-                    sentence=line,
-                )
+                yield self.build_tokens(line)
 
 
 if __name__ == "__main__":
