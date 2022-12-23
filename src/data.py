@@ -3,7 +3,9 @@ from typing import Iterator
 
 import torch
 from torch.utils.data import IterableDataset
-from transformers import BertTokenizer, GPT2Tokenizer, PreTrainedTokenizer
+from transformers import PreTrainedTokenizer
+
+from .tokeniser import bert_pretrained_tokeniser, gpt2_pretrained_tokeniser
 
 
 @dataclass
@@ -47,13 +49,8 @@ class TokenisedSentences(IterableDataset):
 
 
 if __name__ == "__main__":
-    # Encoder Tokeniser
-    tokeniser_encoder = BertTokenizer.from_pretrained("bert-base-cased")
-    # Decoder Tokeniser
-    tokeniser_decoder = GPT2Tokenizer.from_pretrained("gpt2")
-    tokeniser_decoder.add_special_tokens(
-        {"pad_token": "<PAD>", "bos_token": "<BOS>", "eos_token": "<EOS>"}
-    )
+    tokeniser_encoder = bert_pretrained_tokeniser()
+    tokeniser_decoder = gpt2_pretrained_tokeniser()
 
     file = "./data/wikipedia.segmented.nltk.txt"
     dataset = TokenisedSentences(file, tokeniser_encoder, tokeniser_decoder)
