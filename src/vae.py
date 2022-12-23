@@ -1,6 +1,7 @@
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
+from lightning_lite.utilities.seed import seed_everything
 from torch import nn
 from torch.utils.data import DataLoader, Dataset
 from transformers import (  # noqa: E501
@@ -137,6 +138,8 @@ if __name__ == "__main__":
     # Each dataset will cache the tokens in a folder, and include a link to
     # the original source file in that folder. The tokens in the folder will
     # be in chunked files.
+
+    seed_everything(42)
 
     # Dataset and dataloader
     tokeniser_encoder = bert_pretrained_tokeniser()
