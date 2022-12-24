@@ -127,6 +127,63 @@ class BertGPT2VAE(pl.LightningModule):
             print("Reconstr:", "".join(recon))
             print()
 
+    def test_step(self, batch, batch_idx):
+        enc_tokens = batch.enc_tokens_batch
+        dec_tokens = batch.dec_tokens_batch
+
+        # Masking
+        attention_mask = (
+            enc_tokens != self.hparams.tokeniser_encoder.pad_token_id
+        ).float()
+        # TODO: Figure our how items can be masked in the loss
+        # dec_tokens[
+        #     dec_tokens == self.hparams.tokeniser_decoder.pad_token_id
+        # ] = -100
+
+        # Encoding
+        encoder_output = self.model_encoder(
+            enc_tokens,
+            attention_mask=attention_mask,
+            output_hidden_states=True,
+        )
+        pooled_encoder_output = encoder_output.pooler_output
+
+        # Bottleneck
+        mean, logvar = self.latent_proj(pooled_encoder_output).chunk(2, -1)
+        latent = self._reparametrise(mean, logvar) * 5
+
+        # [batch_size, n_embd * n_layer]
+        memory_latent = self.memory_emb_flat(latent)
+        memory_latent_per_layer = torch.split(
+            memory_latent.unsqueeze(1), self.model_decoder.config.n_embd, dim=2
+        )
+
+        # [batch_size, num_heads, seq_length = 1, head_dim]
+        # TODO: Remove magic numbers and replace with calculation
+        m = [_l.view(-1, 12, 1, 64) for _l in memory_latent_per_layer]
+        m = tuple(zip(m, m))
+
+        output_sequences = self.model_decoder.generate(
+            input_ids=dec_tokens,
+            past_key_values=m,
+            max_length=(
+                dec_tokens != self.hparams.tokeniser_decoder.pad_token_id
+            ).sum(),
+            do_sample=True,
+            num_return_sequences=3,
+            top_p=0.9,
+        )
+        recons = self.hparams.tokeniser_decoder.batch_decode(
+            output_sequences.tolist(),
+            skip_special_tokens=True,
+            clean_up_tokenisation_spaces=True,
+        )
+        for orig, recon in zip(batch.sentences, recons):
+            print()
+            print("Original:", orig)
+            print("Reconstr:", "".join(recon))
+            print()
+
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=5e-5)
 
@@ -143,6 +200,9 @@ if __name__ == "__main__":
     # the original source file in that folder. The tokens in the folder will
     # be in chunked files.
     # TODO: Include attention mask?
+    # TODO: Use Wikitext-2 from huggingface datasets - smaller dataset,
+    # eaiser to play with.
+    # TODO: Move build_tokens to
 
     seed_everything(42)
 
