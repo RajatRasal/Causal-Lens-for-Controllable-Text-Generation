@@ -33,3 +33,9 @@ The full dataset can also be downloaded.
 ```
 wget -O data/wikipedia.segmented.nltk.txt https://chunylcus.blob.core.windows.net/machines/msrdl/optimus/data/datasets/wikipedia.segmented.nltk.txt
 ```
+
+## Training
+
+```
+nvidia-smi | grep 'py' | awk '{ print $5 }' | xargs -n1 kill -9 && poetry run python -m src.vae
+```

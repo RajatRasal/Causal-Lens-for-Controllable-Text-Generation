@@ -1,8 +1,9 @@
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
+from lightning_lite.utilities.seed import seed_everything
 from torch import nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from transformers import (  # noqa: E501
     BertConfig,
     BertModel,
@@ -115,17 +116,6 @@ class BertGPT2VAE(pl.LightningModule):
         return torch.optim.AdamW(self.parameters(), lr=5e-5)
 
 
-class MyDataset(Dataset):
-    def __init__(self, data):  # , targets, transform=None):
-        self.data = data
-
-    def __getitem__(self, index):
-        return self.data[index]
-
-    def __len__(self):
-        return len(self.data)
-
-
 if __name__ == "__main__":
     # TODO: Output kl, loss, elbo etc. to Tensorboard
     # TODO: Output 1000 example sentences to Tensorboard
@@ -137,6 +127,9 @@ if __name__ == "__main__":
     # Each dataset will cache the tokens in a folder, and include a link to
     # the original source file in that folder. The tokens in the folder will
     # be in chunked files.
+    # TODO: Include attention mask?
+
+    seed_everything(42)
 
     # Dataset and dataloader
     tokeniser_encoder = bert_pretrained_tokeniser()
@@ -144,7 +137,10 @@ if __name__ == "__main__":
     file = "./data/wikipedia.segmented.nltk.txt"
     dataset = TokenisedSentences(file, tokeniser_encoder, tokeniser_decoder)
     train_dataloader = DataLoader(
-        dataset, batch_size=5, collate_fn=collate_tokens
+        dataset,
+        batch_size=5,
+        collate_fn=collate_tokens,
+        num_workers=32,
     )
 
     # Defining the model
@@ -161,5 +157,13 @@ if __name__ == "__main__":
         collate_fn=collate_tokens,
     )
 
-    trainer = pl.Trainer(max_epochs=40, check_val_every_n_epoch=1)
+    # trainer = pl.Trainer(
+    #     max_epochs=40,
+    #     val_check_interval=100,
+    #     accelerator="gpu", devices="-1", strategy="ddp"
+    # )
+    trainer = pl.Trainer(
+        max_epochs=1, val_check_interval=100, accelerator="gpu", devices=[0]
+    )
+
     trainer.fit(model, train_dataloader, val_dataloader)

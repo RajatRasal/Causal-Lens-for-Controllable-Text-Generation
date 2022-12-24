@@ -71,7 +71,10 @@ class TokenisedSentences(IterableDataset):
 
     def __iter__(self) -> Iterator[Tokens]:
         with open(self.file) as f:
-            while line := f.readline().replace("\n", ""):
+            while line := f.readline():
+                line = line.replace("\n", "")
+                if not line:
+                    continue
                 yield self.build_tokens(line)
 
 
@@ -82,9 +85,13 @@ if __name__ == "__main__":
     file = "./data/wikipedia.segmented.nltk.txt"
     dataset = TokenisedSentences(file, tokeniser_encoder, tokeniser_decoder)
 
-    dataloader = DataLoader(dataset, batch_size=5, collate_fn=collate_tokens)
+    dataloader = DataLoader(
+        dataset, batch_size=10000, collate_fn=collate_tokens, num_workers=10
+    )
 
-    for batch, _ in zip(dataloader, range(10)):
-        print(batch.enc_tokens_batch.shape)
-        print(batch.dec_tokens_batch.shape)
-        print(len(batch.sentences))
+    for i, x in enumerate(dataloader):
+        if i % 100 == 0:
+            print(i)
+        # print(batch.enc_tokens_batch.shape)
+        # print(batch.dec_tokens_batch.shape)
+        # print(len(batch.sentences))
