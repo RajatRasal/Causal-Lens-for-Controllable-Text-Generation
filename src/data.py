@@ -59,12 +59,19 @@ class TokenisedSentences(IterableDataset):
         self.tokeniser_decoder = tokeniser_decoder
 
     def build_tokens(self, line: str) -> Tokens:
+        # TODO: Create our own Tokeniser wrapper which can do the
+        # necesary preprocessing!!
+        dec_sentence = (
+            self.tokeniser_decoder.bos_token
+            + line
+            + self.tokeniser_decoder.eos_token
+        )
         return Tokens(
             enc_tokens=self.tokeniser_encoder.encode(
                 text=line, **self.TOKENISER_ARGS
             ),
             dec_tokens=self.tokeniser_decoder.encode(
-                text=line, **self.TOKENISER_ARGS
+                text=dec_sentence, **self.TOKENISER_ARGS
             ),
             sentence=line,
         )
@@ -85,11 +92,15 @@ if __name__ == "__main__":
     file = "./data/wikipedia.segmented.nltk.txt"
     dataset = TokenisedSentences(file, tokeniser_encoder, tokeniser_decoder)
 
+    # TODO: Include a bos, eos and pad token for GPT2 tokens
     dataloader = DataLoader(
         dataset, batch_size=10000, collate_fn=collate_tokens, num_workers=10
     )
 
     for i, x in enumerate(dataloader):
+        print(x.dec_tokens_batch[0])
+        print(x.enc_tokens_batch[0])
+        break
         if i % 100 == 0:
             print(i)
         # print(batch.enc_tokens_batch.shape)

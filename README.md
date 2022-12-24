@@ -39,3 +39,7 @@ wget -O data/wikipedia.segmented.nltk.txt https://chunylcus.blob.core.windows.ne
 ```
 nvidia-smi | grep 'py' | awk '{ print $5 }' | xargs -n1 kill -9 && poetry run python -m src.vae
 ```
+
+
+## Helpful Links
+- https://huggingface.co/blog/how-to-generate

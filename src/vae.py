@@ -64,10 +64,22 @@ class BertGPT2VAE(pl.LightningModule):
         return eps.mul(std).add_(mean)
 
     def _step(self, enc_tokens: torch.Tensor, dec_tokens: torch.Tensor):
+        # Masking
+        attention_mask = (
+            enc_tokens != self.hparams.tokeniser_encoder.pad_token_id
+        ).float()
+        # TODO: Figure our how items can be masked in the loss
+        # dec_tokens[
+        #     dec_tokens == self.hparams.tokeniser_decoder.pad_token_id
+        # ] = -100
+
         # Encoding
-        pooled_encoder_output = self.model_encoder(
-            enc_tokens, output_hidden_states=True
-        ).pooler_output
+        encoder_output = self.model_encoder(
+            enc_tokens,
+            attention_mask=attention_mask,
+            output_hidden_states=True,
+        )
+        pooled_encoder_output = encoder_output.pooler_output
 
         # Bottleneck
         mean, logvar = self.latent_proj(pooled_encoder_output).chunk(2, -1)
@@ -80,6 +92,7 @@ class BertGPT2VAE(pl.LightningModule):
         )
 
         # [batch_size, num_heads, seq_length = 1, head_dim]
+        # TODO: Remove magic numbers and replace with calculation
         m = [_l.view(-1, 12, 1, 64) for _l in memory_latent_per_layer]
         m = tuple(zip(m, m))
 
@@ -104,7 +117,9 @@ class BertGPT2VAE(pl.LightningModule):
         softmax = F.softmax(logits)
         argmax = torch.argmax(softmax, dim=2)
         recons = self.hparams.tokeniser_decoder.batch_decode(
-            argmax.tolist(), skip_special_tokens=True
+            argmax.tolist(),
+            skip_special_tokens=True,
+            clean_up_tokenisation_spaces=True,
         )
         for orig, recon in zip(batch.sentences, recons):
             print()
@@ -163,7 +178,7 @@ if __name__ == "__main__":
     #     accelerator="gpu", devices="-1", strategy="ddp"
     # )
     trainer = pl.Trainer(
-        max_epochs=1, val_check_interval=100, accelerator="gpu", devices=[0]
+        max_epochs=1, val_check_interval=100, accelerator="gpu", devices=[1]
     )
 
     trainer.fit(model, train_dataloader, val_dataloader)
