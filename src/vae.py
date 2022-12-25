@@ -60,6 +60,11 @@ class BertGPT2VAE(pl.LightningModule):
             * self.model_decoder.config.n_layer,
             bias=False,
         )
+        self.emb_flat = nn.Linear(
+            self.hparams.latent_size,
+            self.model_decoder.config.n_embd,
+            bias=False,
+        )
 
     def _reparametrise(
         self, mean: torch.Tensor, logvar: torch.Tensor
@@ -97,7 +102,7 @@ class BertGPT2VAE(pl.LightningModule):
         kl_mask = (loss_kl > self.hparams.kl_threshold).float()
         return (kl_mask * loss_kl).sum() * self.hparams.beta
 
-    def latent_to_past_key_values(
+    def _latent_to_past_key_values(
         self, latent: torch.Tensor
     ) -> Tuple[Tuple[torch.Tensor]]:
         # [batch_size, n_embd * n_layer]
@@ -111,14 +116,20 @@ class BertGPT2VAE(pl.LightningModule):
         past_key_values = tuple(zip(past, past))
         return past_key_values
 
+    def _latent_to_input_embed(self, latent: torch.Tensor) -> torch.Tensor:
+        return self.emb_flat(latent)
+
     def decode(
         self,
         dec_tokens: torch.Tensor,
-        past_key_values: Tuple[Tuple[torch.Tensor]],
+        latent: torch.Tensor,
     ) -> torch.Tensor:
+        past_key_values = self._latent_to_past_key_values(latent)
+        input_embeds = self._latent_to_input_embed(latent)
         return self.model_decoder(
             dec_tokens,
             past_key_values=past_key_values,
+            input_embeds=input_embeds,
             labels=dec_tokens,
             return_dict=True,
         )["loss"]
@@ -126,13 +137,16 @@ class BertGPT2VAE(pl.LightningModule):
     def generate(
         self,
         dec_tokens: torch.Tensor,
-        past_key_values: Tuple[Tuple[torch.Tensor]],
+        latent: torch.Tensor,
         method: str = "top-p",
     ) -> List[str]:
+        past_key_values = self._latent_to_past_key_values(latent)
+        input_embeds = self._latent_to_input_embed(latent)
         if method == "top-p":
             output_sequences = self.model_decoder.generate(
                 input_ids=dec_tokens,
                 past_key_values=past_key_values,
+                input_embeds=input_embeds,
                 max_length=(
                     dec_tokens != self.hparams.tokeniser_decoder.pad_token_id
                 ).sum(),
@@ -153,8 +167,7 @@ class BertGPT2VAE(pl.LightningModule):
         self, enc_tokens: torch.Tensor, dec_tokens: torch.Tensor
     ) -> torch.Tensor:
         latent, mean, logvar = self.encode(enc_tokens)
-        past_key_values = self.latent_to_past_key_values(latent)
-        recon = self.decode(dec_tokens, past_key_values)
+        recon = self.decode(dec_tokens, latent)
         kl = self.kl_loss(mean, logvar)
         return recon + kl, recon, kl, latent
 
@@ -186,8 +199,7 @@ class BertGPT2VAE(pl.LightningModule):
         loss, latent = self._step(
             batch.enc_tokens_batch, batch.dec_tokens_batch
         )
-        past_key_values = self.latent_to_past_key_values(latent * 3)
-        recons = self.generate(batch.dec_tokens_batch, past_key_values)
+        recons = self.generate(batch.dec_tokens_batch, latent)
 
         for orig, recon in zip(batch.sentences, recons):
             print()
@@ -213,9 +225,6 @@ if __name__ == "__main__":
     # TODO: Include attention mask?
     # TODO: Use Wikitext-2 from huggingface datasets - smaller dataset,
     # eaiser to play with.
-    # TODO: Move build_tokens to
-
-    seed_everything(42)
 
     seed_everything(42)
 
