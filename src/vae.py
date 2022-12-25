@@ -1,9 +1,10 @@
+from typing import List, Tuple
+
 import pytorch_lightning as pl
 import torch
-import torch.nn.functional as F
 from lightning_lite.utilities.seed import seed_everything
 from torch import nn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from transformers import (  # noqa: E501
     BertConfig,
     BertModel,
@@ -23,6 +24,8 @@ class BertGPT2VAE(pl.LightningModule):
         tokeniser_encoder: BertTokenizer,
         tokeniser_decoder: GPT2Tokenizer,
         latent_size: int = 32,
+        beta: float = 1.0,
+        kl_threshold: float = 0.05,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -58,73 +61,142 @@ class BertGPT2VAE(pl.LightningModule):
             bias=False,
         )
 
-    def _reparametrise(self, mean: torch.Tensor, logvar: torch.Tensor):
+    def _reparametrise(
+        self, mean: torch.Tensor, logvar: torch.Tensor
+    ) -> torch.Tensor:
         std = logvar.mul(0.5).exp()
         eps = torch.randn_like(std)
         return eps.mul(std).add_(mean)
 
-    def _step(self, enc_tokens: torch.Tensor, dec_tokens: torch.Tensor):
+    def encode(self, enc_tokens: torch.Tensor) -> torch.Tensor:
+        # Masking
+        attention_mask = (
+            enc_tokens != self.hparams.tokeniser_encoder.pad_token_id
+        ).float()
+        # TODO: Figure our how items can be masked in the loss
+        # dec_tokens[
+        #     dec_tokens == self.hparams.tokeniser_decoder.pad_token_id
+        # ] = -100
+
         # Encoding
-        pooled_encoder_output = self.model_encoder(
-            enc_tokens, output_hidden_states=True
-        ).pooler_output
+        encoder_output = self.model_encoder(
+            enc_tokens,
+            attention_mask=attention_mask,
+            output_hidden_states=True,
+        )
+        pooled_encoder_output = encoder_output.pooler_output
 
         # Bottleneck
         mean, logvar = self.latent_proj(pooled_encoder_output).chunk(2, -1)
-        latent = self._reparametrise(mean, logvar)
+        return self._reparametrise(mean, logvar), mean, logvar
 
+    def kl_loss(  # noqa: E501
+        self, mean: torch.Tensor, logvar: torch.Tensor
+    ) -> torch.Tensor:
+        loss_kl = 0.5 * (mean.pow(2) + logvar.exp() - logvar - 1)
+        kl_mask = (loss_kl > self.hparams.kl_threshold).float()
+        return (kl_mask * loss_kl).sum() * self.hparams.beta
+
+    def latent_to_past_key_values(
+        self, latent: torch.Tensor
+    ) -> Tuple[Tuple[torch.Tensor]]:
         # [batch_size, n_embd * n_layer]
         memory_latent = self.memory_emb_flat(latent)
         memory_latent_per_layer = torch.split(
             memory_latent.unsqueeze(1), self.model_decoder.config.n_embd, dim=2
         )
-
         # [batch_size, num_heads, seq_length = 1, head_dim]
-        m = [_l.view(-1, 12, 1, 64) for _l in memory_latent_per_layer]
-        m = tuple(zip(m, m))
+        # TODO: Remove magic numbers and replace with calculation
+        past = [_l.view(-1, 12, 1, 64) for _l in memory_latent_per_layer]
+        past_key_values = tuple(zip(past, past))
+        return past_key_values
 
-        # Decoding
-        outputs = self.model_decoder(
+    def decode(
+        self,
+        dec_tokens: torch.Tensor,
+        past_key_values: Tuple[Tuple[torch.Tensor]],
+    ) -> torch.Tensor:
+        return self.model_decoder(
             dec_tokens,
-            past_key_values=m,
+            past_key_values=past_key_values,
             labels=dec_tokens,
             return_dict=True,
-        )
-        return outputs
+        )["loss"]
+
+    def generate(
+        self,
+        dec_tokens: torch.Tensor,
+        past_key_values: Tuple[Tuple[torch.Tensor]],
+        method: str = "top-p",
+    ) -> List[str]:
+        if method == "top-p":
+            output_sequences = self.model_decoder.generate(
+                input_ids=dec_tokens,
+                past_key_values=past_key_values,
+                max_length=(
+                    dec_tokens != self.hparams.tokeniser_decoder.pad_token_id
+                ).sum(),
+                do_sample=True,
+                num_return_sequences=3,
+                top_p=0.9,
+            )
+            recons = self.hparams.tokeniser_decoder.batch_decode(
+                output_sequences.tolist(),
+                skip_special_tokens=True,
+                clean_up_tokenisation_spaces=True,
+            )
+            return ["".join(recon) for recon in recons]
+        else:
+            raise Exception(f"Generation method {method} not known")
+
+    def _step(
+        self, enc_tokens: torch.Tensor, dec_tokens: torch.Tensor
+    ) -> torch.Tensor:
+        latent, mean, logvar = self.encode(enc_tokens)
+        past_key_values = self.latent_to_past_key_values(latent)
+        recon = self.decode(dec_tokens, past_key_values)
+        kl = self.kl_loss(mean, logvar)
+        return recon + kl, recon, kl, latent
 
     def training_step(self, batch, batch_idx):
-        return self._step(batch.enc_tokens_batch, batch.dec_tokens_batch)[
-            "loss"
-        ]
+        elbo, recon, kl, _ = self._step(
+            batch.enc_tokens_batch, batch.dec_tokens_batch
+        )
+        return {"loss": elbo, "recon": recon, "kl": kl}
 
     def validation_step(self, batch, batch_idx):
-        logits = self._step(
+        elbo, recon, kl, latent = self._step(
             batch.enc_tokens_batch, batch.dec_tokens_batch
-        ).logits
-        softmax = F.softmax(logits)
-        argmax = torch.argmax(softmax, dim=2)
-        recons = self.hparams.tokeniser_decoder.batch_decode(
-            argmax.tolist(), skip_special_tokens=True
         )
+
+        for orig in batch.sentences:
+            for i in range(-3, 4):
+                recons = self.generate(
+                    batch.dec_tokens_batch,
+                    self.latent_to_past_key_values(latent + i),
+                )
+                for recon in recons:
+                    self.logger.experiment.add_text(
+                        f"latent {i} - {orig}", recon, self.global_step
+                    )
+
+        return {"loss": elbo, "recon": recon, "kl": kl}
+
+    def test_step(self, batch, batch_idx):
+        loss, latent = self._step(
+            batch.enc_tokens_batch, batch.dec_tokens_batch
+        )
+        past_key_values = self.latent_to_past_key_values(latent * 3)
+        recons = self.generate(batch.dec_tokens_batch, past_key_values)
+
         for orig, recon in zip(batch.sentences, recons):
             print()
             print("Original:", orig)
-            print("Reconstr:", "".join(recon))
+            print("Reconstr:", recon)
             print()
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=5e-5)
-
-
-class MyDataset(Dataset):
-    def __init__(self, data):  # , targets, transform=None):
-        self.data = data
-
-    def __getitem__(self, index):
-        return self.data[index]
-
-    def __len__(self):
-        return len(self.data)
 
 
 if __name__ == "__main__":
@@ -138,6 +210,12 @@ if __name__ == "__main__":
     # Each dataset will cache the tokens in a folder, and include a link to
     # the original source file in that folder. The tokens in the folder will
     # be in chunked files.
+    # TODO: Include attention mask?
+    # TODO: Use Wikitext-2 from huggingface datasets - smaller dataset,
+    # eaiser to play with.
+    # TODO: Move build_tokens to
+
+    seed_everything(42)
 
     seed_everything(42)
 
@@ -147,7 +225,10 @@ if __name__ == "__main__":
     file = "./data/wikipedia.segmented.nltk.txt"
     dataset = TokenisedSentences(file, tokeniser_encoder, tokeniser_decoder)
     train_dataloader = DataLoader(
-        dataset, batch_size=5, collate_fn=collate_tokens
+        dataset,
+        batch_size=5,
+        collate_fn=collate_tokens,
+        num_workers=32,
     )
 
     # Defining the model
@@ -156,13 +237,26 @@ if __name__ == "__main__":
     # Some lines for verification
     lines = [
         dataset.build_tokens("the little girl plays with the toys."),
-        dataset.build_tokens("the children are watching a show."),
+        dataset.build_tokens("A girl makes a silly face."),
+        dataset.build_tokens("People are walking near a road."),
     ]
     val_dataloader = DataLoader(  # noqa: E501
         lines,
-        batch_size=5,
+        batch_size=1,
         collate_fn=collate_tokens,
     )
 
-    trainer = pl.Trainer(max_epochs=40, check_val_every_n_epoch=1)
+    # trainer = pl.Trainer(
+    #     max_epochs=40,
+    #     val_check_interval=100,
+    #     accelerator="gpu", devices="-1", strategy="ddp"
+    # )
+    trainer = pl.Trainer(
+        max_epochs=1,
+        val_check_interval=100,
+        log_every_n_steps=100,
+        accelerator="gpu",
+        devices=[0],
+    )
+
     trainer.fit(model, train_dataloader, val_dataloader)
