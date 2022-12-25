@@ -234,15 +234,8 @@ class BertGPT2VAE(pl.LightningModule):
 if __name__ == "__main__":
     # TODO: Output kl, loss, elbo etc. to Tensorboard
     # TODO: Output 1000 example sentences to Tensorboard
-    # TODO: Example interpolation from paper - get z for default sentence then
-    # vary it.
+    # TODO: Interpolations
     # TODO: Varying beta during training runs
-    # TODO: Create a dataset for BERTTokenised sentences, create another for
-    # GPTTokenised sentences
-    # Each dataset will cache the tokens in a folder, and include a link to
-    # the original source file in that folder. The tokens in the folder will
-    # be in chunked files.
-    # TODO: Include attention mask?
     # TODO: Use Wikitext-2 from huggingface datasets - smaller dataset,
     # eaiser to play with.
     # TODO: Currently we do not include an h_emb as seen here

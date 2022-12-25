@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from typing import Iterator, List
 
 import torch
+from datasets import load_dataset
 from torch.utils.data import DataLoader, IterableDataset
 from transformers import PreTrainedTokenizer
 
@@ -60,11 +61,9 @@ class TokenisedSentences(IterableDataset):
 
     def __init__(
         self,
-        file: str,
         tokeniser_encoder: PreTrainedTokenizer,
         tokeniser_decoder: PreTrainedTokenizer,
     ):
-        self.file = file
         self.tokeniser_encoder = tokeniser_encoder
         self.tokeniser_decoder = tokeniser_decoder
 
@@ -96,6 +95,17 @@ class TokenisedSentences(IterableDataset):
             sentence=line,
         )
 
+
+class TokenisedSentencesFromFile(TokenisedSentences):
+    def __init__(
+        self,
+        file: str,
+        tokeniser_encoder: PreTrainedTokenizer,
+        tokeniser_decoder: PreTrainedTokenizer,
+    ):
+        super().__init__(tokeniser_encoder, tokeniser_decoder)
+        self.file = file
+
     def __iter__(self) -> Iterator[Tokens]:
         with open(self.file) as f:
             while line := f.readline():
@@ -105,24 +115,66 @@ class TokenisedSentences(IterableDataset):
                 yield self.build_tokens(line)
 
 
+class TokenisedSentencesFromIterable(TokenisedSentences):
+    def __init__(
+        self,
+        iterable,
+        tokeniser_encoder: PreTrainedTokenizer,
+        tokeniser_decoder: PreTrainedTokenizer,
+    ):
+        super().__init__(tokeniser_encoder, tokeniser_decoder)
+        self.it = iterable
+
+    def __iter__(self) -> Iterator[Tokens]:
+        for line in self.it:
+            # Some lines are blank or contain titles such as
+            #  = = Cricket = =
+            # which can be picked up with the startswith.
+            if not line or line.startswith(" = "):
+                continue
+            # Split sentences
+            # line[:-1] == "\n"
+            # line[:-2] == " "
+            sents = line[:-2].split(".")
+            for sent in sents:
+                if not sent:
+                    continue
+                _sent = sent + "."
+                tokens = self.build_tokens(_sent)
+                if tokens.enc_tokens_length <= 64:
+                    yield tokens
+
+
 if __name__ == "__main__":
     tokeniser_encoder = bert_pretrained_tokeniser()
     tokeniser_decoder = gpt2_pretrained_tokeniser()
 
-    file = "./data/wikipedia.segmented.nltk.txt"
-    dataset = TokenisedSentences(file, tokeniser_encoder, tokeniser_decoder)
+    read_text_file = False
 
-    # TODO: Include a bos, eos and pad token for GPT2 tokens
-    dataloader = DataLoader(
-        dataset, batch_size=10000, collate_fn=collate_tokens, num_workers=10
-    )
+    if read_text_file:
+        f = "./data/wikipedia.segmented.nltk.txt"
+        ds = TokenisedSentences(f, tokeniser_encoder, tokeniser_decoder)
 
-    for i, x in enumerate(dataloader):
-        print(x.dec_tokens_batch[0])
-        print(x.enc_tokens_batch[0])
-        break
-        if i % 100 == 0:
+        # TODO: Include a bos, eos and pad token for GPT2 tokens
+        dataloader = DataLoader(
+            ds, batch_size=10000, collate_fn=collate_tokens, num_workers=10
+        )
+
+        for i, x in enumerate(dataloader):
+            print(x.enc_tokens_batch[0])
+            break
+            if i % 100 == 0:
+                print(i)
+    else:
+        iterable = load_dataset(
+            "wikitext", "wikitext-2-v1", cache_dir="./data"
+        )["train"]["text"]
+        print(len(iterable))
+        dataset = TokenisedSentencesFromIterable(
+            iterable, tokeniser_encoder, tokeniser_decoder
+        )
+        dataloader = DataLoader(
+            dataset, batch_size=1000, collate_fn=collate_tokens, num_workers=10
+        )
+        for i, batch in enumerate(dataloader):
             print(i)
-        # print(batch.enc_tokens_batch.shape)
-        # print(batch.dec_tokens_batch.shape)
-        # print(len(batch.sentences))
