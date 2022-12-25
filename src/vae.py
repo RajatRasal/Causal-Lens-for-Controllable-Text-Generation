@@ -60,11 +60,11 @@ class BertGPT2VAE(pl.LightningModule):
             * self.model_decoder.config.n_layer,
             bias=False,
         )
-        self.emb_flat = nn.Linear(
-            self.hparams.latent_size,
-            self.model_decoder.config.n_embd,
-            bias=False,
-        )
+        # self.emb_flat = nn.Linear(
+        #     self.hparams.latent_size,
+        #     self.model_decoder.config.n_embd,
+        #     bias=False,
+        # )
 
     def _reparametrise(
         self, mean: torch.Tensor, logvar: torch.Tensor
@@ -116,42 +116,44 @@ class BertGPT2VAE(pl.LightningModule):
         past_key_values = tuple(zip(past, past))
         return past_key_values
 
-    def _latent_to_input_embed(self, latent: torch.Tensor) -> torch.Tensor:
-        return self.emb_flat(latent)
-
     def decode(
         self,
         dec_tokens: torch.Tensor,
         latent: torch.Tensor,
     ) -> torch.Tensor:
         past_key_values = self._latent_to_past_key_values(latent)
-        input_embeds = self._latent_to_input_embed(latent)
         return self.model_decoder(
             dec_tokens,
             past_key_values=past_key_values,
-            input_embeds=input_embeds,
             labels=dec_tokens,
             return_dict=True,
         )["loss"]
 
-    def generate(
+    def conditional_generation(
         self,
-        dec_tokens: torch.Tensor,
         latent: torch.Tensor,
+        max_length: int,
         method: str = "top-p",
     ) -> List[str]:
+        assert latent.shape[0] == 1
+
         past_key_values = self._latent_to_past_key_values(latent)
-        input_embeds = self._latent_to_input_embed(latent)
+        context_token = torch.tensor(
+            self.hparams.tokeniser_decoder.encode(
+                self.hparams.tokeniser_decoder.bos_token
+            ),
+            dtype=torch.long,
+            device=self.device,
+        ).unsqueeze(0)
+
         if method == "top-p":
             output_sequences = self.model_decoder.generate(
-                input_ids=dec_tokens,
+                input_ids=context_token,
                 past_key_values=past_key_values,
-                input_embeds=input_embeds,
-                max_length=(
-                    dec_tokens != self.hparams.tokeniser_decoder.pad_token_id
-                ).sum(),
+                max_length=max_length,
                 do_sample=True,
                 num_return_sequences=3,
+                top_k=0,
                 top_p=0.9,
             )
             recons = self.hparams.tokeniser_decoder.batch_decode(
@@ -178,37 +180,55 @@ class BertGPT2VAE(pl.LightningModule):
         return {"loss": elbo, "recon": recon, "kl": kl}
 
     def validation_step(self, batch, batch_idx):
-        elbo, recon, kl, latent = self._step(
+        elbo, recon_loss, kl_loss, latent = self._step(
             batch.enc_tokens_batch, batch.dec_tokens_batch
         )
 
-        for orig in batch.sentences:
-            for i in range(-3, 4):
-                recons = self.generate(
-                    batch.dec_tokens_batch,
-                    self.latent_to_past_key_values(latent + i),
-                )
-                for recon in recons:
-                    self.logger.experiment.add_text(
-                        f"latent {i} - {orig}", recon, self.global_step
-                    )
+        for i in range(len(batch.sentences)):
+            # TODO: Include len calculation in dataset so we don't
+            # need to recompute for each validation
+            recons = self.conditional_generation(
+                latent[i].unsqueeze(0),
+                batch.dec_tokens_batch_lengths[i],
+            )
+            recons_str = "\n".join([recon_str for recon_str in recons])
+            self.logger.experiment.add_text(
+                batch.sentences[i], recons_str, self.global_step
+            )
+            print()
+            print(f"ORIGINAL:\n{batch.sentences[i]}")
+            print()
+            print(f"RECONSTRUCTION:\n{recons_str}")
+            print()
 
-        return {"loss": elbo, "recon": recon, "kl": kl}
+        return {"loss": elbo, "recon": recon_loss, "kl": kl_loss}
 
     def test_step(self, batch, batch_idx):
-        loss, latent = self._step(
+        elbo, recon_loss, kl_loss, latent = self._step(
             batch.enc_tokens_batch, batch.dec_tokens_batch
         )
-        recons = self.generate(batch.dec_tokens_batch, latent)
 
-        for orig, recon in zip(batch.sentences, recons):
+        for i in range(len(batch.sentences)):
+            # TODO: Include len calculation in dataset so we don't
+            # need to recompute for each validation
+            recons = self.conditional_generation(
+                latent[i].unsqueeze(0),
+                batch.dec_tokens_batch_lengths[i],
+            )
+            recons_str = "\n".join([recon_str for recon_str in recons])
+            self.logger.experiment.add_text(
+                batch.sentences[i], recons_str, self.global_step
+            )
             print()
-            print("Original:", orig)
-            print("Reconstr:", recon)
+            print(f"ORIGINAL:\n{batch.sentences[i]}")
             print()
+            print(f"RECONSTRUCTION:\n{recons_str}")
+            print()
+
+        return {"loss": elbo, "recon": recon_loss, "kl": kl_loss}
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(self.parameters(), lr=5e-5)
+        return torch.optim.AdamW(self.parameters(), lr=5e-5, eps=1e-8)
 
 
 if __name__ == "__main__":
@@ -225,6 +245,10 @@ if __name__ == "__main__":
     # TODO: Include attention mask?
     # TODO: Use Wikitext-2 from huggingface datasets - smaller dataset,
     # eaiser to play with.
+    # TODO: Currently we do not include an h_emb as seen here
+    # https://github.com/ChunyuanLI/Optimus/blob/f63f4a7ca10aea022978500a37d72dd53a37a576/code/pytorch_transformers/modeling_gpt2.py#L472
+    # We should still be able to get some good results since the paper
+    # says the h_mem is more important.
 
     seed_everything(42)
 
@@ -251,7 +275,7 @@ if __name__ == "__main__":
     ]
     val_dataloader = DataLoader(  # noqa: E501
         lines,
-        batch_size=1,
+        batch_size=5,
         collate_fn=collate_tokens,
     )
 
@@ -262,7 +286,7 @@ if __name__ == "__main__":
     # )
     trainer = pl.Trainer(
         max_epochs=1,
-        val_check_interval=100,
+        val_check_interval=10,
         log_every_n_steps=100,
         accelerator="gpu",
         devices=[0],
