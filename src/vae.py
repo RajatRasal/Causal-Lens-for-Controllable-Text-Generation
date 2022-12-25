@@ -90,9 +90,9 @@ class BertGPT2VAE(pl.LightningModule):
         mean, logvar = self.latent_proj(pooled_encoder_output).chunk(2, -1)
         return self._reparametrise(mean, logvar), mean, logvar
 
-    def kl_loss(
+    def kl_loss(  # noqa: E501
         self, mean: torch.Tensor, logvar: torch.Tensor
-    ) -> torch.Tensor:  # noqa: E501
+    ) -> torch.Tensor:
         loss_kl = 0.5 * (mean.pow(2) + logvar.exp() - logvar - 1)
         kl_mask = (loss_kl > self.hparams.kl_threshold).float()
         return (kl_mask * loss_kl).sum() * self.hparams.beta
@@ -168,14 +168,17 @@ class BertGPT2VAE(pl.LightningModule):
         elbo, recon, kl, latent = self._step(
             batch.enc_tokens_batch, batch.dec_tokens_batch
         )
-        past_key_values = self.latent_to_past_key_values(latent * 3)
-        recons = self.generate(batch.dec_tokens_batch, past_key_values)
 
-        for orig, recon in zip(batch.sentences, recons):
-            print()
-            print("Original:", orig)
-            print("Reconstr:", recon)
-            print()
+        for orig in batch.sentences:
+            for i in range(-3, 4):
+                recons = self.generate(
+                    batch.dec_tokens_batch,
+                    self.latent_to_past_key_values(latent + i),
+                )
+                for recon in recons:
+                    self.logger.experiment.add_text(
+                        f"latent {i} - {orig}", recon, self.global_step
+                    )
 
         return {"loss": elbo, "recon": recon, "kl": kl}
 
@@ -247,7 +250,11 @@ if __name__ == "__main__":
     #     accelerator="gpu", devices="-1", strategy="ddp"
     # )
     trainer = pl.Trainer(
-        max_epochs=1, val_check_interval=100, accelerator="gpu", devices=[0]
+        max_epochs=1,
+        val_check_interval=100,
+        log_every_n_steps=100,
+        accelerator="gpu",
+        devices=[0],
     )
 
     trainer.fit(model, train_dataloader, val_dataloader)
