@@ -175,7 +175,7 @@ class BertGPT2VAE(pl.LightningModule):
         max_length: int,
         method: str = "top-p",
     ) -> List[str]:
-        assert latent.shape[0] == 1
+        assert latent.shape[0] == 1, "Generate 1 sentence at a time."
 
         past_key_values = self._latent_to_past_key_values(latent)
         context_token = torch.tensor(
