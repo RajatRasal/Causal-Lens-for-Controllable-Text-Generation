@@ -52,4 +52,5 @@ tensorboard --logdir lightning_logs/
 
 
 ## Helpful Links
-- https://huggingface.co/blog/how-to-generate
+- [Methods of decoding tokens](https://huggingface.co/blog/how-to-generate)
+- [Picking the right GPU for training](https://towardsdatascience.com/choosing-the-right-gpu-for-deep-learning-on-aws-d69c157d8c86)
