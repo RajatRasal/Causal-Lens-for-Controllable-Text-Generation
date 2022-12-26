@@ -136,12 +136,11 @@ class BertGPT2VAE(pl.LightningModule):
             else self.hparams.beta
         )
         if beta == 0.0:
-            kl_mask = loss_kl > self.hparams.kl_threshold
-            return (kl_mask.float() * loss_kl).sum() + (
-                ~kl_mask
-            ).sum() * self.hparams.kl_threshold
+            kl_mask = (loss_kl > self.hparams.kl_threshold).float()
+            loss_kl = (kl_mask * loss_kl).sum(dim=1)
         else:
-            return loss_kl * beta
+            loss_kl = (loss_kl * beta).sum(dim=1)
+        return loss_kl.mean()
 
     def _latent_to_past_key_values(
         self, latent: torch.Tensor
