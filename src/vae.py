@@ -1,3 +1,5 @@
+import random
+from collections import defaultdict
 from typing import List, Tuple
 
 import pytorch_lightning as pl
@@ -32,6 +34,7 @@ class BertGPT2VAE(pl.LightningModule):
         beta_cycle_len: int = 10,
         beta_cycle_ratio_increase: float = 0.25,
         beta_cycle_ratio_zero: float = 0.25,
+        max_position_embeddings: int = 70,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -40,13 +43,17 @@ class BertGPT2VAE(pl.LightningModule):
         self.beta_cycle = None
 
         # Encoder Model
-        bert_config = BertConfig()
+        bert_config = BertConfig(
+            max_position_embeddings=self.hparams.max_position_embeddings
+        )
         self.model_encoder = BertModel(
             bert_config, self.hparams.tokeniser_encoder
         )
 
         # Decoder Model
-        gpt2_config = GPT2Config()
+        gpt2_config = GPT2Config(
+            max_position_embeddings=self.hparams.max_position_embeddings
+        )
         self.model_decoder = GPT2LMHeadModel(gpt2_config)
         self.model_decoder.resize_token_embeddings(
             len(self.hparams.tokeniser_decoder)
@@ -123,12 +130,18 @@ class BertGPT2VAE(pl.LightningModule):
         self, mean: torch.Tensor, logvar: torch.Tensor
     ) -> torch.Tensor:
         loss_kl = 0.5 * (mean.pow(2) + logvar.exp() - logvar - 1)
-        kl_mask = (loss_kl > self.hparams.kl_threshold).float()
-        kl = (kl_mask * loss_kl).sum()
-        if self.hparams.use_beta_schedule:
-            return kl * self._beta_from_schedule()
+        beta = (
+            self._beta_from_schedule()
+            if self.hparams.use_beta_schedule
+            else self.hparams.beta
+        )
+        if beta == 0.0:
+            kl_mask = loss_kl > self.hparams.kl_threshold
+            return (kl_mask.float() * loss_kl).sum() + (
+                ~kl_mask
+            ).sum() * self.hparams.kl_threshold
         else:
-            return kl * self.hparams.beta
+            return loss_kl * beta
 
     def _latent_to_past_key_values(
         self, latent: torch.Tensor
@@ -205,32 +218,38 @@ class BertGPT2VAE(pl.LightningModule):
         elbo, recon, kl, _ = self._step(
             batch.enc_tokens_batch, batch.dec_tokens_batch
         )
-        return {"loss": elbo, "recon": recon, "kl": kl}
+        metrics = {"loss": elbo, "recon": recon, "kl": kl}
+        self.log_dict({f"train/{k}": v.item() for k, v in metrics.items()})
+        return metrics
 
     def validation_step(self, batch, batch_idx):
         elbo, recon_loss, kl_loss, latent = self._step(
             batch.enc_tokens_batch, batch.dec_tokens_batch
         )
 
-        if batch_idx == 0:
-            for i in range(len(batch.sentences)):
-                # TODO: Include len calculation in dataset so we don't
-                # need to recompute for each validation
-                recons = self.conditional_generation(
-                    latent[i].unsqueeze(0),
-                    batch.dec_tokens_batch_lengths[i],
-                )
-                recons_str = "\n".join([recon_str for recon_str in recons])
-                self.logger.experiment.add_text(
-                    batch.sentences[i], recons_str, self.global_step
-                )
-                print()
-                print(f"ORIGINAL:\n{batch.sentences[i]}")
-                print()
-                print(f"RECONSTRUCTION:\n{recons_str}")
-                print()
+        for i in range(len(batch.sentences)):
+            # TODO: Include len calculation in dataset so we don't
+            # need to recompute for each validation
+            recons = self.conditional_generation(
+                latent[i].unsqueeze(0),
+                batch.dec_tokens_batch_lengths[i],
+            )
+            recons_str = "\n".join([recon_str for recon_str in recons])
+            self.logger.experiment.add_text(
+                batch.sentences[i], recons_str, self.global_step
+            )
 
         return {"loss": elbo, "recon": recon_loss, "kl": kl_loss}
+
+    def validation_epoch_end(self, outputs):
+        collated_outputs = defaultdict(list)
+        for step_output in outputs:
+            for k, v in step_output.items():
+                collated_outputs[k].append(v.item())
+
+        self.log_dict(
+            {f"val/{k}": sum(v) / len(v) for k, v in collated_outputs.items()}
+        )
 
     def test_step(self, batch, batch_idx):
         elbo, recon_loss, kl_loss, latent = self._step(
@@ -248,13 +267,18 @@ class BertGPT2VAE(pl.LightningModule):
             self.logger.experiment.add_text(
                 batch.sentences[i], recons_str, self.global_step
             )
-            print()
-            print(f"ORIGINAL:\n{batch.sentences[i]}")
-            print()
-            print(f"RECONSTRUCTION:\n{recons_str}")
-            print()
 
         return {"loss": elbo, "recon": recon_loss, "kl": kl_loss}
+
+    def test_epoch_end(self, outputs):
+        collated_outputs = defaultdict(list)
+        for step_output in outputs:
+            for k, v in step_output.items():
+                collated_outputs[k].append(v.item())
+
+        self.log_dict(
+            {f"test/{k}": sum(v) / len(v) for k, v in collated_outputs.items()}
+        )
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=5e-5, eps=1e-8)
@@ -262,11 +286,7 @@ class BertGPT2VAE(pl.LightningModule):
 
 if __name__ == "__main__":
     # TODO: Output kl, loss, elbo etc. to Tensorboard
-    # TODO: Output 1000 example sentences to Tensorboard
     # TODO: Interpolations
-    # TODO: Varying beta during training runs
-    # TODO: Use Wikitext-2 from huggingface datasets - smaller dataset,
-    # eaiser to play with.
     # TODO: Currently we do not include an h_emb as seen here
     # https://github.com/ChunyuanLI/Optimus/blob/f63f4a7ca10aea022978500a37d72dd53a37a576/code/pytorch_transformers/modeling_gpt2.py#L472
     # We should still be able to get some good results since the paper
@@ -274,7 +294,7 @@ if __name__ == "__main__":
 
     seed_everything(42, workers=True)
 
-    # Dataset and dataloader
+    # Training dataset
     tokeniser_encoder = bert_pretrained_tokeniser()
     tokeniser_decoder = gpt2_pretrained_tokeniser()
     train_list = load_dataset("wikitext", "wikitext-2-v1", cache_dir="./data")[
@@ -289,15 +309,23 @@ if __name__ == "__main__":
         collate_fn=collate_tokens,
         num_workers=32,
     )
+
+    # Max epochs and steps needed for beta scheduler
     max_epochs = 1
     max_steps = max_epochs * len(train_dataset.it)
 
-    val_list = load_dataset("wikitext", "wikitext-2-v1", cache_dir="./data")[
-        "validation"
-    ]["text"][:10]
+    # Validation dataset
+    # TODO: We need 5x as much data.
+    # Performance of LMs is linear in the log-scale of the no. of words.
+    # https://aclanthology.org/2021.acl-long.90.pdf
+    total_val_list = load_dataset(
+        "wikitext", "wikitext-2-v1", cache_dir="./data"
+    )["train"]["text"]
+    val_sample = random.sample(total_val_list, 10)
     val_dataset = TokenisedSentencesFromIterable(
-        val_list, tokeniser_encoder, tokeniser_decoder
+        val_sample, tokeniser_encoder, tokeniser_decoder
     )
+    assert len(val_dataset.it) < 100
     val_dataloader = DataLoader(
         val_dataset,
         batch_size=5,
@@ -313,10 +341,12 @@ if __name__ == "__main__":
     #     val_check_interval=100,
     #     accelerator="gpu", devices="-1", strategy="ddp"
     # )
+
+    log_and_val_freq = 1000
     trainer = pl.Trainer(
         max_epochs=max_epochs,
-        val_check_interval=10,
-        log_every_n_steps=100,
+        val_check_interval=log_and_val_freq,
+        log_every_n_steps=log_and_val_freq,
         accelerator="gpu",
         devices=[0],
         max_steps=max_steps,

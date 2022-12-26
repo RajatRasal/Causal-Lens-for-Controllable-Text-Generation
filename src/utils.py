@@ -8,7 +8,7 @@ def beta_cycle_in_range(
     n_cycle: int = 4,
     ratio_increase: float = 0.5,
     ratio_zero: float = 0.3,
-):
+) -> np.ndarray:
     L = np.ones(n_iter) * stop
     period = n_iter / n_cycle
     step = (stop - start) / (period * ratio_increase)  # linear schedule

@@ -35,9 +35,19 @@ wget -O data/wikipedia.segmented.nltk.txt https://chunylcus.blob.core.windows.ne
 ```
 
 ## Training
-
+To kill any unstopped Python processes using GPUS:
 ```
-nvidia-smi | grep 'py' | awk '{ print $5 }' | xargs -n1 kill -9 && poetry run python -m src.vae
+nvidia-smi | grep 'py' | awk '{ print $5 }' | xargs -n1 kill -9
+```
+
+To start training:
+```
+poetry run python -m src.vae
+```
+
+To run tensorboard:
+```
+tensorboard --logdir lightning_logs/
 ```
 
 

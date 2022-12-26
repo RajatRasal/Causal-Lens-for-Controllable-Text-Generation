@@ -56,7 +56,7 @@ class TokenisedSentences(IterableDataset):
         "padding": "max_length",
         "truncation": True,
         "return_tensors": "pt",
-        "max_length": 512,
+        "max_length": 64,
     }
 
     def __init__(
