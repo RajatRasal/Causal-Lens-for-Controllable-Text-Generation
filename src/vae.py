@@ -2,6 +2,7 @@ from typing import List, Tuple
 
 import pytorch_lightning as pl
 import torch
+from datasets import load_dataset
 from lightning_lite.utilities.seed import seed_everything
 from torch import nn
 from torch.utils.data import DataLoader
@@ -14,8 +15,9 @@ from transformers import (  # noqa: E501
     GPT2Tokenizer,
 )
 
-from .data import TokenisedSentences, collate_tokens
+from .data import TokenisedSentencesFromIterable, collate_tokens
 from .tokeniser import bert_pretrained_tokeniser, gpt2_pretrained_tokeniser
+from .utils import beta_cycle_in_range
 
 
 class BertGPT2VAE(pl.LightningModule):
@@ -26,9 +28,16 @@ class BertGPT2VAE(pl.LightningModule):
         latent_size: int = 32,
         beta: float = 1.0,
         kl_threshold: float = 0.05,
+        use_beta_schedule: bool = True,
+        beta_cycle_len: int = 10,
+        beta_cycle_ratio_increase: float = 0.25,
+        beta_cycle_ratio_zero: float = 0.25,
     ):
         super().__init__()
         self.save_hyperparameters()
+
+        # beta cycle
+        self.beta_cycle = None
 
         # Encoder Model
         bert_config = BertConfig()
@@ -38,9 +47,7 @@ class BertGPT2VAE(pl.LightningModule):
 
         # Decoder Model
         gpt2_config = GPT2Config()
-        self.model_decoder = GPT2LMHeadModel(
-            gpt2_config
-        )  # , self.hparams.tokeniser_decoder)
+        self.model_decoder = GPT2LMHeadModel(gpt2_config)
         self.model_decoder.resize_token_embeddings(
             len(self.hparams.tokeniser_decoder)
         )
@@ -95,12 +102,33 @@ class BertGPT2VAE(pl.LightningModule):
         mean, logvar = self.latent_proj(pooled_encoder_output).chunk(2, -1)
         return self._reparametrise(mean, logvar), mean, logvar
 
+    def _beta_from_schedule(self):
+        if self.beta_cycle is None:
+            assert self.trainer.max_steps > 0
+            self.beta_cycle = beta_cycle_in_range(
+                self.trainer.max_steps,
+                start=0.0,
+                stop=self.hparams.beta,
+                n_cycle=self.hparams.beta_cycle_len,
+                ratio_increase=self.hparams.beta_cycle_ratio_increase,
+                ratio_zero=self.hparams.beta_cycle_ratio_zero,
+            )
+        return (
+            1.0
+            if self.global_step >= self.beta_cycle.shape[0]
+            else self.beta_cycle[self.global_step]
+        )
+
     def kl_loss(  # noqa: E501
         self, mean: torch.Tensor, logvar: torch.Tensor
     ) -> torch.Tensor:
         loss_kl = 0.5 * (mean.pow(2) + logvar.exp() - logvar - 1)
         kl_mask = (loss_kl > self.hparams.kl_threshold).float()
-        return (kl_mask * loss_kl).sum() * self.hparams.beta
+        kl = (kl_mask * loss_kl).sum()
+        if self.hparams.use_beta_schedule:
+            return kl * self._beta_from_schedule()
+        else:
+            return kl * self.hparams.beta
 
     def _latent_to_past_key_values(
         self, latent: torch.Tensor
@@ -184,22 +212,23 @@ class BertGPT2VAE(pl.LightningModule):
             batch.enc_tokens_batch, batch.dec_tokens_batch
         )
 
-        for i in range(len(batch.sentences)):
-            # TODO: Include len calculation in dataset so we don't
-            # need to recompute for each validation
-            recons = self.conditional_generation(
-                latent[i].unsqueeze(0),
-                batch.dec_tokens_batch_lengths[i],
-            )
-            recons_str = "\n".join([recon_str for recon_str in recons])
-            self.logger.experiment.add_text(
-                batch.sentences[i], recons_str, self.global_step
-            )
-            print()
-            print(f"ORIGINAL:\n{batch.sentences[i]}")
-            print()
-            print(f"RECONSTRUCTION:\n{recons_str}")
-            print()
+        if batch_idx == 0:
+            for i in range(len(batch.sentences)):
+                # TODO: Include len calculation in dataset so we don't
+                # need to recompute for each validation
+                recons = self.conditional_generation(
+                    latent[i].unsqueeze(0),
+                    batch.dec_tokens_batch_lengths[i],
+                )
+                recons_str = "\n".join([recon_str for recon_str in recons])
+                self.logger.experiment.add_text(
+                    batch.sentences[i], recons_str, self.global_step
+                )
+                print()
+                print(f"ORIGINAL:\n{batch.sentences[i]}")
+                print()
+                print(f"RECONSTRUCTION:\n{recons_str}")
+                print()
 
         return {"loss": elbo, "recon": recon_loss, "kl": kl_loss}
 
@@ -243,15 +272,34 @@ if __name__ == "__main__":
     # We should still be able to get some good results since the paper
     # says the h_mem is more important.
 
-    seed_everything(42)
+    seed_everything(42, workers=True)
 
     # Dataset and dataloader
     tokeniser_encoder = bert_pretrained_tokeniser()
     tokeniser_decoder = gpt2_pretrained_tokeniser()
-    file = "./data/wikipedia.segmented.nltk.txt"
-    dataset = TokenisedSentences(file, tokeniser_encoder, tokeniser_decoder)
+    train_list = load_dataset("wikitext", "wikitext-2-v1", cache_dir="./data")[
+        "train"
+    ]["text"]
+    train_dataset = TokenisedSentencesFromIterable(
+        train_list, tokeniser_encoder, tokeniser_decoder
+    )
     train_dataloader = DataLoader(
-        dataset,
+        train_dataset,
+        batch_size=5,
+        collate_fn=collate_tokens,
+        num_workers=32,
+    )
+    max_epochs = 1
+    max_steps = max_epochs * len(train_dataset.it)
+
+    val_list = load_dataset("wikitext", "wikitext-2-v1", cache_dir="./data")[
+        "validation"
+    ]["text"][:10]
+    val_dataset = TokenisedSentencesFromIterable(
+        val_list, tokeniser_encoder, tokeniser_decoder
+    )
+    val_dataloader = DataLoader(
+        val_dataset,
         batch_size=5,
         collate_fn=collate_tokens,
         num_workers=32,
@@ -260,29 +308,18 @@ if __name__ == "__main__":
     # Defining the model
     model = BertGPT2VAE(tokeniser_encoder, tokeniser_decoder)
 
-    # Some lines for verification
-    lines = [
-        dataset.build_tokens("the little girl plays with the toys."),
-        dataset.build_tokens("A girl makes a silly face."),
-        dataset.build_tokens("People are walking near a road."),
-    ]
-    val_dataloader = DataLoader(  # noqa: E501
-        lines,
-        batch_size=5,
-        collate_fn=collate_tokens,
-    )
-
     # trainer = pl.Trainer(
     #     max_epochs=40,
     #     val_check_interval=100,
     #     accelerator="gpu", devices="-1", strategy="ddp"
     # )
     trainer = pl.Trainer(
-        max_epochs=1,
+        max_epochs=max_epochs,
         val_check_interval=10,
         log_every_n_steps=100,
         accelerator="gpu",
         devices=[0],
+        max_steps=max_steps,
     )
 
     trainer.fit(model, train_dataloader, val_dataloader)

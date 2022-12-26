@@ -123,10 +123,11 @@ class TokenisedSentencesFromIterable(TokenisedSentences):
         tokeniser_decoder: PreTrainedTokenizer,
     ):
         super().__init__(tokeniser_encoder, tokeniser_decoder)
-        self.it = iterable
+        self.it = self._filter_sentences(iterable)
 
-    def __iter__(self) -> Iterator[Tokens]:
-        for line in self.it:
+    def _filter_sentences(self, lines: List[str]) -> List[str]:
+        all_sents = []
+        for line in lines:
             # Some lines are blank or contain titles such as
             #  = = Cricket = =
             # which can be picked up with the startswith.
@@ -135,14 +136,16 @@ class TokenisedSentencesFromIterable(TokenisedSentences):
             # Split sentences
             # line[:-1] == "\n"
             # line[:-2] == " "
-            sents = line[:-2].split(".")
-            for sent in sents:
-                if not sent:
-                    continue
-                _sent = sent + "."
-                tokens = self.build_tokens(_sent)
-                if tokens.enc_tokens_length <= 64:
-                    yield tokens
+            all_sents.extend(
+                [sent + "." for sent in line[:-2].split(".") if sent]
+            )
+        return all_sents
+
+    def __iter__(self) -> Iterator[Tokens]:
+        for sent in self.it:
+            tokens = self.build_tokens(sent)
+            if tokens.enc_tokens_length <= 64:
+                yield tokens
 
 
 if __name__ == "__main__":
@@ -169,7 +172,6 @@ if __name__ == "__main__":
         iterable = load_dataset(
             "wikitext", "wikitext-2-v1", cache_dir="./data"
         )["train"]["text"]
-        print(len(iterable))
         dataset = TokenisedSentencesFromIterable(
             iterable, tokeniser_encoder, tokeniser_decoder
         )
