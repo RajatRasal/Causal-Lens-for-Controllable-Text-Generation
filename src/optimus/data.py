@@ -33,6 +33,12 @@ class YelpTokens:
     original_review_idx: int
 
 
+@dataclass
+class YelpTokensBatch:
+    tokens_batch: TokensBatch
+    labels: List[int]
+
+
 def collate_tokens(tokens_list: List[Tokens]) -> TokensBatch:
     enc_tokens_list = []
     enc_tokens_lengths = []
@@ -53,6 +59,20 @@ def collate_tokens(tokens_list: List[Tokens]) -> TokensBatch:
         dec_tokens_batch=torch.stack(dec_tokens_list).squeeze(1),
         dec_tokens_batch_lengths=dec_tokens_lengths,
         sentences=sentences,
+    )
+
+
+def collate_yelp_tokens(tokens_list: List[YelpTokens]) -> YelpTokensBatch:
+    tokens = []
+    labels = []
+
+    for token in tokens_list:
+        tokens.append(token.tokens)
+        labels.append(token.polarity)
+
+    return YelpTokensBatch(
+        tokens_batch=collate_tokens(tokens),
+        labels=torch.tensor(labels, dtype=torch.long),
     )
 
 
@@ -178,6 +198,7 @@ class TokenisedSentencesYelpReviewPolarity(Dataset):
         "return_tensors": "pt",
         "max_length": 64,
     }
+    LOOKUP_POLARITY = {1: 0, 2: 1}
 
     def __init__(
         self,
@@ -213,7 +234,7 @@ class TokenisedSentencesYelpReviewPolarity(Dataset):
                 ):
                     continue
                 self.sentences.append(sentence)
-                self.polarity.append(polarity)
+                self.polarity.append(self.LOOKUP_POLARITY[polarity])
                 self.original_review.append(i)
 
     def __len__(self) -> int:

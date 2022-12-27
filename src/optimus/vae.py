@@ -86,7 +86,7 @@ class BertGPT2VAE(pl.LightningModule):
         eps = torch.randn_like(std)
         return eps.mul(std).add_(mean)
 
-    def encode(self, enc_tokens: torch.Tensor) -> torch.Tensor:
+    def _encode(self, enc_tokens: torch.Tensor) -> torch.Tensor:
         # Masking
         attention_mask = (
             enc_tokens != self.hparams.tokeniser_encoder.pad_token_id
@@ -103,8 +103,10 @@ class BertGPT2VAE(pl.LightningModule):
             output_hidden_states=True,
         )
         pooled_encoder_output = encoder_output.pooler_output
+        return pooled_encoder_output
 
-        # Bottleneck
+    def encode(self, enc_tokens: torch.Tensor) -> torch.Tensor:
+        pooled_encoder_output = self._encode(enc_tokens)
         mean, logvar = self.latent_proj(pooled_encoder_output).chunk(2, -1)
         return self._reparametrise(mean, logvar), mean, logvar
 
