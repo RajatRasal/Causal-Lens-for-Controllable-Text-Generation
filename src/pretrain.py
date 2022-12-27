@@ -21,11 +21,21 @@ seed_everything(42, workers=True)
 # Training dataset
 tokeniser_encoder = bert_pretrained_tokeniser()
 tokeniser_decoder = gpt2_pretrained_tokeniser()
-train_list = load_dataset("wikitext", "wikitext-2-v1", cache_dir="./data")[
+
+# No. paragraphs 36718, No. sentences 88000, No. words 2mil
+# train_list = load_dataset("wikitext", "wikitext-2-v1", cache_dir="./data")[
+#     "train"
+# ]["text"]
+
+# We need 10 mil words for a linearly better performance, so we
+# could get approx 36718 * 5 paragraphs = 200000.
+#   => Maximum 10108411 words
+train_list = load_dataset("wikitext", "wikitext-103-v1", cache_dir="./data")[
     "train"
 ]["text"]
+train_sample = random.sample(train_list, 200000)
 train_dataset = TokenisedSentencesFromIterable(
-    train_list, tokeniser_encoder, tokeniser_decoder
+    train_sample, tokeniser_encoder, tokeniser_decoder
 )
 train_dataloader = DataLoader(
     train_dataset,
