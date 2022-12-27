@@ -50,6 +50,28 @@ To run tensorboard:
 tensorboard --logdir lightning_logs/
 ```
 
+## Experiments
+
+### Guided Language Generation
+
+**Sentence transfer via arithmetic** - Encode sentences $x_{A,B,C}$ to latent representations $z_{A,B,C}$. Then calculate $z_D = z_B − z_A + z_C$, and generate the sentence $x_D$ using the decoder. We can do this using the pre-trained Optimus and an Optimus fine-tuned on Yelp.
+
+**Latent Interpolation** - Encode sentences $x_{1,2}$ to latent representations $z_{1,2}$. Then interpolate between the latent features by calculating $z_{\tau} = z_1 · (1 − \tau) + z_2 · \tau$, and generating the corresponding sentence $x_\tau$ using the decoder. We can do this using the pre-trained Optimus and an Optimus fine-tuned on Yelp.
+
+**Label-conditional text generation** - The goal is to generate text reviews given the positive/negative sentiment. We fine-tune OPTIMUS using the VAE objective on the Yelp reviews polarity dataset, then freeze backbone weights. A conditional GAN is trained on the fixed latent space. The generation process is to first produce a latent vector zy based on a given label y using conditional GAN, then generate sentences conditioned on zy using the decoder.
+
+### Low-Resource Language Understanding
+
+The output from the penultimate layer of the BERT Encoder, $h_{\text{[cls]}}$, is fed into an linear classifier $W_C \in \mathbb{R}^{K \times H}$, where $K$ is the number of classes, with objective $-\log(\text{softmax}(h_{\text{[cls]}}W^T_C))$.
+
+Two schemes are used:
+- Fine-tuning - where both the pre-trained model and the classifier are updated.
+- Feature-based - where pre-trained model weights are frozen to provide embeddings for the classifier update.
+
+**Sentiment classification** - A varying number of training samples are randomly
+chosen, ranging from 1 to 10K per class, from the Yelp reviews polarity dataset. 10 trials are used when the number of available training samples are small, each is trained in 100 training epochs.
+
+**Visualization of the latent space** - We use t-SNE to visualize the latent features $z$ on a 2D map, prior to fine-tuning for the sentiment classification problem. The validation set of Yelp is used to extract the latent features.
 
 ## Helpful Links
 - [Methods of decoding tokens](https://huggingface.co/blog/how-to-generate)
