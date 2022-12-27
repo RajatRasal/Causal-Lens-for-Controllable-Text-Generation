@@ -42,7 +42,7 @@ nvidia-smi | grep 'py' | awk '{ print $5 }' | xargs -n1 kill -9
 
 To start training:
 ```
-poetry run python -m src.pretrain
+poetry run python -m src.optimus.pretrain
 ```
 
 To run tensorboard:

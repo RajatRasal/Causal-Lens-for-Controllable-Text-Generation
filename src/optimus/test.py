@@ -22,7 +22,7 @@ dataloader = DataLoader(  # noqa: E501
 )
 
 model = BertGPT2VAE.load_from_checkpoint(
-    checkpoint_path="./lightning_logs/version_19/checkpoints/epoch=0-step=59000.ckpt",
+    checkpoint_path="./lightning_logs/version_19/checkpoints/epoch=0-step=59000.ckpt",  # noqa: E501
     map_location=None,
 )
 model.tokeniser_decoder = tokeniser_decoder
