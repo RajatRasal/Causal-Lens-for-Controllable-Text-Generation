@@ -1,12 +1,11 @@
+import re
 from dataclasses import dataclass
-from typing import Iterator, List
+from typing import Dict, Iterator, List, Union
 
 import torch
-from datasets import load_dataset
-from torch.utils.data import DataLoader, IterableDataset
+from torch.utils.data import Dataset, IterableDataset
+from torchtext.datasets import YelpReviewPolarity
 from transformers import PreTrainedTokenizer
-
-from .tokeniser import bert_pretrained_tokeniser, gpt2_pretrained_tokeniser
 
 
 @dataclass
@@ -25,6 +24,13 @@ class TokensBatch:
     dec_tokens_batch: torch.Tensor
     dec_tokens_batch_lengths: List[int]
     sentences: List[str]
+
+
+@dataclass
+class YelpTokens:
+    tokens: Tokens
+    polarity: int
+    original_review_idx: int
 
 
 def collate_tokens(tokens_list: List[Tokens]) -> TokensBatch:
@@ -50,9 +56,44 @@ def collate_tokens(tokens_list: List[Tokens]) -> TokensBatch:
     )
 
 
+def _build_tokens(
+    line: str,
+    tokeniser_encoder: PreTrainedTokenizer,
+    tokeniser_decoder: PreTrainedTokenizer,
+    tokeniser_kwargs: Dict[str, Union[str, bool, int]],
+) -> Tokens:
+    # TODO: Create our own Tokeniser wrapper which can do the
+    # necesary preprocessing!!
+    # Currently this assume that tokeniser_decoder is the gpt2 decoder!!!!
+    dec_sentence = (
+        tokeniser_decoder.bos_token + line + tokeniser_decoder.eos_token
+    )
+    enc_tokens = tokeniser_encoder.encode(
+        text=line,
+        **tokeniser_kwargs,
+    )
+    enc_tokens_length = (
+        (enc_tokens != tokeniser_encoder.pad_token_id).sum().item()
+    )
+    dec_tokens = tokeniser_decoder.encode(
+        text=dec_sentence,
+        **tokeniser_kwargs,
+    )
+    dec_tokens_length = (
+        (dec_tokens != tokeniser_decoder.pad_token_id).sum().item()
+    )
+    return Tokens(
+        enc_tokens=enc_tokens,
+        enc_tokens_length=enc_tokens_length,
+        dec_tokens=dec_tokens,
+        dec_tokens_length=dec_tokens_length,
+        sentence=line,
+    )
+
+
 class TokenisedSentences(IterableDataset):
 
-    TOKENISER_ARGS = {
+    TOKENISER_KWARGS = {
         "padding": "max_length",
         "truncation": True,
         "return_tensors": "pt",
@@ -68,31 +109,11 @@ class TokenisedSentences(IterableDataset):
         self.tokeniser_decoder = tokeniser_decoder
 
     def build_tokens(self, line: str) -> Tokens:
-        # TODO: Create our own Tokeniser wrapper which can do the
-        # necesary preprocessing!!
-        dec_sentence = (
-            self.tokeniser_decoder.bos_token
-            + line
-            + self.tokeniser_decoder.eos_token
-        )
-        enc_tokens = self.tokeniser_encoder.encode(
-            text=line, **self.TOKENISER_ARGS
-        )
-        enc_tokens_length = (
-            (enc_tokens != self.tokeniser_encoder.pad_token_id).sum().item()
-        )
-        dec_tokens = self.tokeniser_decoder.encode(
-            text=dec_sentence, **self.TOKENISER_ARGS
-        )
-        dec_tokens_length = (
-            (dec_tokens != self.tokeniser_decoder.pad_token_id).sum().item()
-        )
-        return Tokens(
-            enc_tokens=enc_tokens,
-            enc_tokens_length=enc_tokens_length,
-            dec_tokens=dec_tokens,
-            dec_tokens_length=dec_tokens_length,
-            sentence=line,
+        return _build_tokens(
+            line,
+            self.tokeniser_encoder,
+            self.tokeniser_decoder,
+            self.TOKENISER_KWARGS,
         )
 
 
@@ -148,35 +169,60 @@ class TokenisedSentencesFromIterable(TokenisedSentences):
                 yield tokens
 
 
-if __name__ == "__main__":
-    tokeniser_encoder = bert_pretrained_tokeniser()
-    tokeniser_decoder = gpt2_pretrained_tokeniser()
+class TokenisedSentencesYelpReviewPolarity(Dataset):
 
-    read_text_file = False
+    TOKENISER_KWARGS = {
+        "padding": "max_length",
+        "truncation": True,
+        "return_tensors": "pt",
+        "max_length": 64,
+    }
 
-    if read_text_file:
-        f = "./data/wikipedia.segmented.nltk.txt"
-        ds = TokenisedSentences(f, tokeniser_encoder, tokeniser_decoder)
-
-        # TODO: Include a bos, eos and pad token for GPT2 tokens
-        dataloader = DataLoader(
-            ds, batch_size=10000, collate_fn=collate_tokens, num_workers=10
+    def __init__(
+        self,
+        tokeniser_encoder: PreTrainedTokenizer,
+        tokeniser_decoder: PreTrainedTokenizer,
+        split: str,
+        root: str,
+        max_length: int = 64,
+    ):
+        self.split = split
+        self.root = root
+        self.yelp_review_dataset = YelpReviewPolarity(
+            root=self.root, split=self.split
         )
+        self.tokeniser_encoder = tokeniser_encoder
+        self.tokeniser_decoder = tokeniser_decoder
+        self.max_length = max_length
 
-        for i, x in enumerate(dataloader):
-            print(x.enc_tokens_batch[0])
-            break
-            if i % 100 == 0:
-                print(i)
-    else:
-        iterable = load_dataset(
-            "wikitext", "wikitext-2-v1", cache_dir="./data"
-        )["train"]["text"]
-        dataset = TokenisedSentencesFromIterable(
-            iterable, tokeniser_encoder, tokeniser_decoder
+        self._reviews_to_sentences()
+        self.n_sents = len(self.sentences)
+
+    def _reviews_to_sentences(self):
+        self.sentences = []
+        self.polarity = []
+        self.original_review = []
+        for i, (polarity, review) in enumerate(self.yelp_review_dataset):
+            sentences = re.split("\\. *", review.replace("\\n", ""))
+            for sentence in sentences:
+                if not sentence or not re.search("[a-zA-Z0-9]", sentence):
+                    continue
+                sentence += "."
+                self.sentences.append(sentence)
+                self.polarity.append(polarity)
+                self.original_review.append(i)
+
+    def __len__(self) -> int:
+        return self.n_sents
+
+    def __getitem__(self, idx) -> YelpTokens:
+        return YelpTokens(
+            tokens=_build_tokens(
+                self.sentences[idx],
+                self.tokeniser_encoder,
+                self.tokeniser_decoder,
+                self.TOKENISER_KWARGS,
+            ),
+            polarity=self.polarity[idx],
+            original_review_idx=self.original_review[idx],
         )
-        dataloader = DataLoader(
-            dataset, batch_size=1000, collate_fn=collate_tokens, num_workers=10
-        )
-        for i, batch in enumerate(dataloader):
-            print(i)
