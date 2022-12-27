@@ -171,6 +171,7 @@ class TokenisedSentencesFromIterable(TokenisedSentences):
 
 class TokenisedSentencesYelpReviewPolarity(Dataset):
 
+    # TODO: Refactor this out to a constant
     TOKENISER_KWARGS = {
         "padding": "max_length",
         "truncation": True,
@@ -184,7 +185,6 @@ class TokenisedSentencesYelpReviewPolarity(Dataset):
         tokeniser_decoder: PreTrainedTokenizer,
         split: str,
         root: str,
-        max_length: int = 64,
     ):
         self.split = split
         self.root = root
@@ -193,7 +193,6 @@ class TokenisedSentencesYelpReviewPolarity(Dataset):
         )
         self.tokeniser_encoder = tokeniser_encoder
         self.tokeniser_decoder = tokeniser_decoder
-        self.max_length = max_length
 
         self._reviews_to_sentences()
         self.n_sents = len(self.sentences)
@@ -208,6 +207,11 @@ class TokenisedSentencesYelpReviewPolarity(Dataset):
                 if not sentence or not re.search("[a-zA-Z0-9]", sentence):
                     continue
                 sentence += "."
+                if (
+                    len(sentence.split(" "))
+                    >= self.TOKENISER_KWARGS["max_length"]
+                ):
+                    continue
                 self.sentences.append(sentence)
                 self.polarity.append(polarity)
                 self.original_review.append(i)

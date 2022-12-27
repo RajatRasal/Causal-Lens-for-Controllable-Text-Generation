@@ -13,9 +13,14 @@ from transformers import (  # noqa: E501
     GPT2Tokenizer,
 )
 
+from .tokeniser import (  # noqa: E501
+    bert_pretrained_tokeniser,
+    gpt2_pretrained_tokeniser,
+)
 from .utils import beta_cycle_in_range
 
 
+# TODO: Include Active Units calculation
 class BertGPT2VAE(pl.LightningModule):
     def __init__(
         self,
@@ -170,7 +175,8 @@ class BertGPT2VAE(pl.LightningModule):
         method: str = "top-p",
         num_return_sequences: int = 1,
     ) -> List[str]:
-        assert latent.shape[0] == 1, "Generate 1 sentence at a time."
+        if latent.shape[0] != 1:
+            raise Exception("Generate 1 sentence at a time.")
 
         past_key_values = self._latent_to_past_key_values(latent)
         context_token = torch.tensor(
@@ -277,3 +283,16 @@ class BertGPT2VAE(pl.LightningModule):
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=5e-5, eps=1e-8)
+
+
+def load_bert_gpt2_vae(checkpoint_path: str) -> BertGPT2VAE:
+    model = BertGPT2VAE.load_from_checkpoint(
+        checkpoint_path=checkpoint_path,
+        # "./lightning_logs/version_19/checkpoints/epoch=0-step=59000.ckpt",  # noqa: E501
+        map_location=None,
+    )
+
+    model.tokeniser_encoder = bert_pretrained_tokeniser()
+    model.tokeniser_decoder = gpt2_pretrained_tokeniser()
+
+    return model
