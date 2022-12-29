@@ -14,6 +14,7 @@ from .arch import BertForLatentConnector, GPT2ForLatentConnector
 from .decoding import top_k_top_p_filtering
 
 
+# TODO: Copy more methods from arch.utils to here with tests
 # TODO: For each experiment, we can subclass this class.
 class PreTrainedOptimus(pl.LightningModule):
     """
