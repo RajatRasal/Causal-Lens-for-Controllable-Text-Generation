@@ -11,7 +11,7 @@ from src.optimus.tokeniser import (  # noqa: E501
 )
 
 from .arch import BertForLatentConnector, GPT2ForLatentConnector
-from .utils import top_k_top_p_filtering
+from .decoding import top_k_top_p_filtering
 
 
 # TODO: For each experiment, we can subclass this class.
