@@ -1,3 +1,6 @@
 ```
-python -m src.optimus_rewrite.run_latent_generation     --dataset Debug     --checkpoint_dir=./checkpoint-31250     --output_dir=./checkpoint-31250     --encoder_model_type=bert     --encoder_model_name_or_path=bert-base-cased     --decoder_model_type=gpt2     --decoder_model_name_or_path=gpt2     --train_data_file=$TRAIN_FILE     --eval_data_file=$TEST_FILE     --per_gpu_eval_batch_size=1     --gloabl_step_eval 31250     --block_size 100     --max_seq_length 100     --latent_size 768     --interact_with_user_input     --play_mode interpolation     --sent_source="a yellow cat likes to chase a long string ."     --sent_target="a yellow cat likes to chase a short string ."     --num_interpolation_steps=10
+poetry run -m src.optimus_rewrite.from_pretrained_to_lightning \
+    --output-dir=./checkpoint-31250 \
+    --step=31250 \
+    --latent-size=768
 ```
