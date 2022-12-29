@@ -15,18 +15,21 @@ repos:
     rev: 3.8.4
     hooks:
       - id: flake8
+        exclude: src/optimus_rewrite/arch/
 
   - repo: https://github.com/ambv/black
     rev: 22.3.0
     hooks:
       - id: black
         args: ["--line-length", "80"]
+        exclude: src/optimus_rewrite/arch/
 
   - repo: https://github.com/pycqa/isort
     rev: 5.9.2
     hooks:
     - id: isort
       args: ["--profile", "black"]
+      exclude: src/optimus_rewrite/arch/
 
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.3.0
