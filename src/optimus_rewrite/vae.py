@@ -146,4 +146,5 @@ class PreTrainedOptimus(pl.LightningModule):
             tokens = self.conditional_generation(z, **dec_kwargs).squeeze(0)
             return self.untokenise(tokens)
         else:
+            # TODO: Use reparametrised vector as opposed to z
             raise NotImplementedError("Deterministic must be true")
