@@ -27,8 +27,3 @@ from .optimization import (
     WarmupCosineWithHardRestartsSchedule,
     WarmupLinearSchedule,
 )
-
-# Tokenizer
-from .tokenization_bert import BertTokenizer
-from .tokenization_gpt2 import GPT2Tokenizer
-from .tokenization_utils import PreTrainedTokenizer
