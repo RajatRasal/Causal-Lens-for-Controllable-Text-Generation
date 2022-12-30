@@ -35,16 +35,16 @@ GPT2_PRETRAINED_MODEL_ARCHIVE_MAP = {
     "gpt2-large": "https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-large-pytorch_model.bin",  # noqa: E501
     # TODO: Upload models to S3 and set up bucket for serving
     # Models from https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimius_for_snli.md
-    "gpt2-optimus-snli-latent-768-beta-1": "",
-    "gpt2-optimus-snli-latent-768-beta-0.5": "",
-    "gpt2-optimus-snli-latent-768-beta-0": "",
+    "gpt2-optimus-cased-snli-beta-1": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-snli-beta-1.bin",  # noqa: E501
+    "gpt2-optimus-cased-snli-beta-0.5": "",
+    "gpt2-optimus-cased-snli-beta-0": "",
     # https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimus_finetune_language_models.md
-    "gpt2-optimus-latent-32-beta-1": "",
-    "gpt2-optimus-latent-32-beta-0.5": "",
-    "gpt2-optimus-latent-32-beta-0": "",
-    "gpt2-optimus-latent-768-beta-1": "",
-    "gpt2-optimus-latent-768-beta-0.5": "",
-    "gpt2-optimus-latent-768-beta-0": "",
+    "gpt2-optimus-cased-beta-1": "",
+    "gpt2-optimus-cased-beta-0.5": "",
+    "gpt2-optimus-cased-beta-0": "",
+    "gpt2-optimus-cased-beta-1": "",
+    "gpt2-optimus-cased-beta-0.5": "",
+    "gpt2-optimus-cased-beta-0": "",
 }
 
 

@@ -24,7 +24,9 @@ class PreTrainedOptimus(pl.LightningModule):
     """
 
     def __init__(
-        self, bert_model_name: str, gpt2_model_name: str, latent_size: int = 32
+        self,
+        bert_model_name: str,
+        gpt2_model_name: str,
     ):
         super().__init__()
         self.save_hyperparameters()
@@ -33,7 +35,7 @@ class PreTrainedOptimus(pl.LightningModule):
         self.tokeniser_decoder = gpt2_pretrained_tokeniser()
 
         self.encoder = BertForLatentConnector.from_pretrained(
-            self.hparams.bert_model_name, latent_size=self.hparams.latent_size
+            self.hparams.bert_model_name
         )
         self.decoder = GPT2ForLatentConnector.from_pretrained(
             self.hparams.gpt2_model_name

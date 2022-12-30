@@ -27,6 +27,9 @@ GPT2_PRETRAINED_CONFIG_ARCHIVE_MAP = {
     "gpt2": "https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-config.json",
     "gpt2-medium": "https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-medium-config.json",
     "gpt2-large": "https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-large-config.json",
+    # TODO: Upload models to S3 and set up bucket for serving
+    # Models from https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimius_for_snli.md
+    "gpt2-optimus-cased-snli-beta-1": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-snli-beta-1.json",
 }
 
 

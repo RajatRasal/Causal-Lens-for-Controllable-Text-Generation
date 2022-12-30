@@ -1,16 +1,21 @@
 import argparse
-import os
 
-import torch
 from lightning_lite.utilities.seed import seed_everything
 
 from .vae import PreTrainedOptimus
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output-dir", type=str, required=True)
-    parser.add_argument("--step", type=int, default=508523)
-    parser.add_argument("--latent-size", type=int, default=32)
+    parser.add_argument(
+        "--encoder-model-name",
+        type=str,
+        default="bert-optimus-cased-snli-latent-768-beta-1",
+    )
+    parser.add_argument(
+        "--decoder-model-name",
+        type=str,
+        default="gpt2-optimus-cased-snli-beta-1",
+    )
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument(
         "--sent-source",
@@ -31,27 +36,13 @@ if __name__ == "__main__":
     parser.add_argument("--temperature", type=float, default=1.0)
     parser.add_argument("--top-k", type=float, default=0.0)
     parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
 
-    seed_everything(42)
-
-    e = args.step
-    output_encoder_dir = os.path.join(
-        args.output_dir, "checkpoint-encoder-{}".format(e)
-    )
-    output_decoder_dir = os.path.join(
-        args.output_dir, "checkpoint-decoder-{}".format(e)
-    )
-    output_full_dir = os.path.join(
-        args.output_dir, "checkpoint-full-{}".format(e)
-    )
-    checkpoint = torch.load(
-        os.path.join(output_full_dir, "training.bin"),
-        map_location=torch.device("cpu"),
-    )
+    seed_everything(args.seed)
 
     optimus = PreTrainedOptimus(
-        output_encoder_dir, output_decoder_dir, latent_size=args.latent_size
+        args.encoder_model_name, args.decoder_model_name
     ).eval()
     res = optimus.interpolate(
         args.sent_source, args.sent_target, args.num_interpolation_steps

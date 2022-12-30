@@ -35,16 +35,16 @@ BERT_PRETRAINED_MODEL_ARCHIVE_MAP = {
     "bert-large-cased": "https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-cased-pytorch_model.bin",  # noqa: E501
     # TODO: Upload models to S3 and set up bucket for serving
     # Models from https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimius_for_snli.md
-    "bert-optimus-snli-latent-768-beta-1": "",
-    "bert-optimus-snli-latent-768-beta-0.5": "",
-    "bert-optimus-snli-latent-768-beta-0": "",
+    "bert-optimus-cased-snli-latent-768-beta-1": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-snli-latent-768-beta-1.bin",  # noqa: E501
+    "bert-optimus-cased-snli-latent-768-beta-0.5": "",
+    "bert-optimus-cased-snli-latent-768-beta-0": "",
     # https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimus_finetune_language_models.md
-    "bert-optimus-latent-32-beta-1": "",
-    "bert-optimus-latent-32-beta-0.5": "",
-    "bert-optimus-latent-32-beta-0": "",
-    "bert-optimus-latent-768-beta-1": "",
-    "bert-optimus-latent-768-beta-0.5": "",
-    "bert-optimus-latent-768-beta-0": "",
+    "bert-optimus-cased-latent-32-beta-1": "",
+    "bert-optimus-cased-latent-32-beta-0.5": "",
+    "bert-optimus-cased-latent-32-beta-0": "",
+    "bert-optimus-cased-latent-768-beta-1": "",
+    "bert-optimus-cased-latent-768-beta-0.5": "",
+    "bert-optimus-cased-latent-768-beta-0": "",
 }
 
 
@@ -560,14 +560,14 @@ class BertForLatentConnector(BertPreTrainedModel):
 
     """
 
-    def __init__(self, config, latent_size):
+    def __init__(self, config):
         super().__init__(config)
 
         self.embeddings = BertEmbeddings(config)
         self.encoder = BertEncoder(config)
         self.pooler = BertPooler(config)
 
-        self.linear = nn.Linear(config.hidden_size, 2 * latent_size, bias=False)
+        self.linear = nn.Linear(config.hidden_size, 2 * config.latent_size, bias=False)
 
         self.init_weights()
 
