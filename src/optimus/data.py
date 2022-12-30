@@ -27,14 +27,14 @@ class TokensBatch:
 
 
 @dataclass
-class YelpTokens:
+class LabelledTokens:
     tokens: Tokens
-    polarity: int
-    original_review_idx: int
+    label: int
+    original_doc_id: int
 
 
 @dataclass
-class YelpTokensBatch:
+class LabelledTokensBatch:
     tokens_batch: TokensBatch
     labels: List[int]
 
@@ -62,15 +62,17 @@ def collate_tokens(tokens_list: List[Tokens]) -> TokensBatch:
     )
 
 
-def collate_yelp_tokens(tokens_list: List[YelpTokens]) -> YelpTokensBatch:
+def collate_labelled_tokens(
+    tokens_list: List[LabelledTokens],
+) -> LabelledTokensBatch:
     tokens = []
     labels = []
 
     for token in tokens_list:
         tokens.append(token.tokens)
-        labels.append(token.polarity)
+        labels.append(token.label)
 
-    return YelpTokensBatch(
+    return LabelledTokensBatch(
         tokens_batch=collate_tokens(tokens),
         labels=torch.tensor(labels, dtype=torch.long),
     )
@@ -191,13 +193,6 @@ class TokenisedSentencesFromIterable(TokenisedSentences):
 
 class TokenisedSentencesYelpReviewPolarity(Dataset):
 
-    # TODO: Refactor this out to a constant
-    TOKENISER_KWARGS = {
-        "padding": "max_length",
-        "truncation": True,
-        "return_tensors": "pt",
-        "max_length": 64,
-    }
     LOOKUP_POLARITY = {1: 0, 2: 1}
 
     def __init__(
@@ -206,6 +201,10 @@ class TokenisedSentencesYelpReviewPolarity(Dataset):
         tokeniser_decoder: PreTrainedTokenizer,
         split: str,
         root: str,
+        max_length: int = 100,
+        return_tensors: str = "pt",
+        truncation: bool = True,
+        padding: str = "max_length",
     ):
         self.split = split
         self.root = root
@@ -214,6 +213,11 @@ class TokenisedSentencesYelpReviewPolarity(Dataset):
         )
         self.tokeniser_encoder = tokeniser_encoder
         self.tokeniser_decoder = tokeniser_decoder
+
+        self.max_length = max_length
+        self.return_tensors = return_tensors
+        self.truncation = truncation
+        self.padding = padding
 
         self._reviews_to_sentences()
         self.n_sents = len(self.sentences)
@@ -228,10 +232,7 @@ class TokenisedSentencesYelpReviewPolarity(Dataset):
                 if not sentence or not re.search("[a-zA-Z0-9]", sentence):
                     continue
                 sentence += "."
-                if (
-                    len(sentence.split(" "))
-                    >= self.TOKENISER_KWARGS["max_length"]
-                ):
+                if len(sentence.split(" ")) >= self.max_length:
                     continue
                 self.sentences.append(sentence)
                 self.polarity.append(self.LOOKUP_POLARITY[polarity])
@@ -240,14 +241,19 @@ class TokenisedSentencesYelpReviewPolarity(Dataset):
     def __len__(self) -> int:
         return self.n_sents
 
-    def __getitem__(self, idx) -> YelpTokens:
-        return YelpTokens(
+    def __getitem__(self, idx) -> LabelledTokens:
+        return LabelledTokens(
             tokens=_build_tokens(
                 self.sentences[idx],
                 self.tokeniser_encoder,
                 self.tokeniser_decoder,
-                self.TOKENISER_KWARGS,
+                {
+                    "max_length": self.max_length,
+                    "return_tensors": self.return_tensors,
+                    "truncation": self.truncation,
+                    "padding": self.padding,
+                },
             ),
-            polarity=self.polarity[idx],
-            original_review_idx=self.original_review[idx],
+            label=self.polarity[idx],
+            original_doc_id=self.original_review[idx],
         )

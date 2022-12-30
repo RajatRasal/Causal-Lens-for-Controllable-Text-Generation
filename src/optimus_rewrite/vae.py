@@ -73,6 +73,7 @@ class PreTrainedOptimus(pl.LightningModule):
         mean, logvar = self.encoder.linear(encoding).chunk(2, -1)
         return self.reparametrise(mean, logvar), mean, logvar
 
+    # TODO: Move this into experiments.py
     def interpolate(
         self,
         source_sent: str,
@@ -92,6 +93,7 @@ class PreTrainedOptimus(pl.LightningModule):
 
         return results
 
+    # TODO: Move this into experiments.py
     def analogy(
         self,
         source_sent: str,
