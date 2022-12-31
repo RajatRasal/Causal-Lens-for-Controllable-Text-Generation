@@ -4,6 +4,24 @@ from lightning_lite.utilities.seed import seed_everything
 
 from .pretrained_optimus.vae import PreTrainedOptimus
 
+
+def analogy(
+    model: PreTrainedOptimus,
+    source_sent: str,
+    target_sent: str,
+    input_sent: str,
+) -> str:
+    _, z1, _ = model.encode(model.tokenise([source_sent])[0].unsqueeze(0))
+    _, z2, _ = model.encode(model.tokenise([target_sent])[0].unsqueeze(0))
+    _, z3, _ = model.encode(model.tokenise([input_sent])[0].unsqueeze(0))
+
+    z = z3 + (z2 - z1)
+    tokens = model.conditional_generation(z).squeeze(0)
+    text = model.untokenise(tokens)
+
+    return text
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -44,8 +62,8 @@ if __name__ == "__main__":
     optimus = PreTrainedOptimus(
         args.encoder_model_name, args.decoder_model_name
     ).eval()
-
-    res = optimus.analogy(
+    res = analogy(
+        optimus,
         args.sent_source,
         args.sent_target,
         args.sent_input,

@@ -1,8 +1,30 @@
 import argparse
+from collections import defaultdict
+from typing import Dict
 
 from lightning_lite.utilities.seed import seed_everything
 
 from .pretrained_optimus.vae import PreTrainedOptimus
+
+
+def interpolate(
+    model: PreTrainedOptimus,
+    source_sent: str,
+    target_sent: str,
+    steps: int = 10,
+) -> Dict[int, str]:
+    _, z1, _ = model.encode(model.tokenise([source_sent])[0].unsqueeze(0))
+    _, z2, _ = model.encode(model.tokenise([target_sent])[0].unsqueeze(0))
+
+    results = defaultdict(str)
+    for step in range(steps + 1):
+        z = z1 + (z2 - z1) * step * 1.0 / steps
+        tokens = model.conditional_generation(z)
+        text = model.untokenise(tokens.squeeze(0))
+        results[step] = text
+
+    return results
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -39,8 +61,11 @@ if __name__ == "__main__":
     optimus = PreTrainedOptimus(
         args.encoder_model_name, args.decoder_model_name
     ).eval()
-    res = optimus.interpolate(
-        args.sent_source, args.sent_target, args.num_interpolation_steps
+    res = interpolate(
+        optimus,
+        args.sent_source,
+        args.sent_target,
+        args.num_interpolation_steps,
     )
     for k, v in res.items():
         print(k, v)

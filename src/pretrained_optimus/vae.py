@@ -1,5 +1,4 @@
-from collections import defaultdict
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import pytorch_lightning as pl
 import torch
@@ -71,44 +70,6 @@ class PreTrainedOptimus(pl.LightningModule):
         encoding = self.encoder(tokens, attention_mask=(tokens > 0).float())[1]
         mean, logvar = self.encoder.linear(encoding).chunk(2, -1)
         return self.reparametrise(mean, logvar), mean, logvar
-
-    # TODO: Move this into experiments.py
-    def interpolate(
-        self,
-        source_sent: str,
-        target_sent: str,
-        steps: int = 10,
-        **decoder_kwargs
-    ) -> Dict[int, str]:
-        _, z1, _ = self.encode(self.tokenise([source_sent])[0].unsqueeze(0))
-        _, z2, _ = self.encode(self.tokenise([target_sent])[0].unsqueeze(0))
-
-        results = defaultdict(str)
-        for step in range(steps + 1):
-            z = z1 + (z2 - z1) * step * 1.0 / steps
-            tokens = self.conditional_generation(z, **decoder_kwargs)
-            text = self.untokenise(tokens.squeeze(0))
-            results[step] = text
-
-        return results
-
-    # TODO: Move this into experiments.py
-    def analogy(
-        self,
-        source_sent: str,
-        target_sent: str,
-        input_sent: str,
-        **decoder_kwargs
-    ) -> str:
-        _, z1, _ = self.encode(self.tokenise([source_sent])[0].unsqueeze(0))
-        _, z2, _ = self.encode(self.tokenise([target_sent])[0].unsqueeze(0))
-        _, z3, _ = self.encode(self.tokenise([input_sent])[0].unsqueeze(0))
-
-        z = z3 + (z2 - z1)
-        tokens = self.conditional_generation(z, **decoder_kwargs).squeeze(0)
-        text = self.untokenise(tokens)
-
-        return text
 
     def decode(self, z: torch.Tensor, labels: torch.Tensor):
         return self.decoder(

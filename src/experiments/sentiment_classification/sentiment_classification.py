@@ -9,11 +9,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from lightning_lite.utilities.seed import seed_everything
-from src.optimus.data import (  # noqa: E501
-    LabelledTokensBatch,
-    TokenisedSentencesYelpReviewPolarity,
-    collate_labelled_tokens,
-)
 from torch.optim import Adam
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torchmetrics.functional.classification import (  # noqa: E501
@@ -21,6 +16,11 @@ from torchmetrics.functional.classification import (  # noqa: E501
     binary_f1_score,
 )
 
+from .pretrained_optimus.data import (  # noqa: E501
+    LabelledTokensBatch,
+    TokenisedSentencesYelpReviewPolarity,
+    collate_labelled_tokens,
+)
 from .vae import PreTrainedOptimus
 
 
