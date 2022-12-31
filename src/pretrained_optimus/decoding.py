@@ -3,7 +3,10 @@ import torch.nn.functional as F
 
 
 def top_k_top_p_filtering(
-    logits, top_k=0, top_p=0.0, filter_value=-float("Inf")
+    logits: torch.FloatTensor,
+    top_k: int = 0,
+    top_p: int = 0.0,
+    filter_value: float = -float("Inf"),
 ):
     """
     Filter a distribution of logits using top-k and/or nucleus (top-p)

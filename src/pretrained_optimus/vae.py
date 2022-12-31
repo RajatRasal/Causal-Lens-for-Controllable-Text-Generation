@@ -3,7 +3,8 @@ from typing import List, Optional
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-from src.optimus.tokeniser import (  # noqa: E501
+
+from src.utils.tokeniser.tokeniser import (  # noqa: E501
     bert_pretrained_tokeniser,
     gpt2_pretrained_tokeniser,
 )
