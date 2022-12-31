@@ -30,9 +30,6 @@ from .modeling_utils import Conv1D, PreTrainedModel, prune_conv1d_layer
 logger = logging.getLogger(__name__)
 
 GPT2_PRETRAINED_MODEL_ARCHIVE_MAP = {
-    "gpt2": "https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-pytorch_model.bin",  # noqa: E501
-    "gpt2-medium": "https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-medium-pytorch_model.bin",  # noqa: E501
-    "gpt2-large": "https://s3.amazonaws.com/models.huggingface.co/bert/gpt2-large-pytorch_model.bin",  # noqa: E501
     # TODO: Upload models to S3 and set up bucket for serving
     # Models from https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimius_for_snli.md
     "gpt2-optimus-cased-snli-beta-1": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-snli-beta-1.bin",  # noqa: E501

@@ -34,6 +34,9 @@ The full dataset can also be downloaded.
 wget -O data/wikipedia.segmented.nltk.txt https://chunylcus.blob.core.windows.net/machines/msrdl/optimus/data/datasets/wikipedia.segmented.nltk.txt
 ```
 
+## Available Pretrained Optimus Models
+#### TODO: List of Optimus models available goes here
+
 ## Training
 To kill any unstopped Python processes using GPUS:
 ```

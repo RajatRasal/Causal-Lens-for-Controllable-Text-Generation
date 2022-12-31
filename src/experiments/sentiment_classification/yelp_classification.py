@@ -22,6 +22,7 @@ from src.utils.data.tokens import (  # noqa: E501
 from .data import TokenisedSentencesYelpReviewPolarity
 
 
+# TODO: Move to utils
 @dataclass
 class ClassifierOutput:
     """
