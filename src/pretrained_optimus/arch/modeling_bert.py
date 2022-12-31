@@ -525,6 +525,7 @@ BERT_INPUTS_DOCSTRING = r"""
             ``1`` indicates the head is **not masked**, ``0`` indicates the head is **masked**.
 """
 
+
 @add_start_docstrings(
     "The bare Bert Model transformer outputting raw hidden-states without any specific head on top.",
     BERT_START_DOCSTRING,
@@ -567,7 +568,9 @@ class BertForLatentConnector(BertPreTrainedModel):
         self.encoder = BertEncoder(config)
         self.pooler = BertPooler(config)
 
-        self.linear = nn.Linear(config.hidden_size, 2 * config.latent_size, bias=False)
+        self.linear = nn.Linear(
+            config.hidden_size, 2 * config.latent_size, bias=False
+        )
 
         self.init_weights()
 

@@ -9,13 +9,16 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from lightning_lite.utilities.seed import seed_everything
-from torch.optim import Adam
-from torch.utils.data import DataLoader, SubsetRandomSampler
-
 from src.optimus.data import (  # noqa: E501
     LabelledTokensBatch,
     TokenisedSentencesYelpReviewPolarity,
     collate_labelled_tokens,
+)
+from torch.optim import Adam
+from torch.utils.data import DataLoader, SubsetRandomSampler
+from torchmetrics.functional.classification import (  # noqa: E501
+    binary_accuracy,
+    binary_f1_score,
 )
 
 from .vae import PreTrainedOptimus
@@ -76,11 +79,16 @@ class YelpBinarySentimentClassifier(PreTrainedOptimus):
         step_name: str,
     ) -> Dict[str, torch.Tensor]:
         outputs = self.forward(enc_tokens, labels=labels.float())
-        # TODO: Calculate accuracy
+        preds = torch.round(F.sigmoid(outputs.logits)).long().flatten()
+
         # TODO: Confusion matrix
-        # TODO: ROC AUC
-        metrics = {"loss": outputs.loss}
+        metrics = {
+            "loss": outputs.loss,
+            "accuracy": binary_accuracy(preds, labels),
+            "f1_score": binary_f1_score(preds, labels),
+        }
         self._log_metrics(metrics, step_name)
+
         return metrics
 
     def training_step(

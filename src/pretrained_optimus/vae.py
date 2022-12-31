@@ -4,7 +4,6 @@ from typing import Dict, List, Optional
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
-
 from src.optimus.tokeniser import (  # noqa: E501
     bert_pretrained_tokeniser,
     gpt2_pretrained_tokeniser,
@@ -99,7 +98,6 @@ class PreTrainedOptimus(pl.LightningModule):
         source_sent: str,
         target_sent: str,
         input_sent: str,
-        steps: int = 10,
         **decoder_kwargs
     ) -> str:
         _, z1, _ = self.encode(self.tokenise([source_sent])[0].unsqueeze(0))
