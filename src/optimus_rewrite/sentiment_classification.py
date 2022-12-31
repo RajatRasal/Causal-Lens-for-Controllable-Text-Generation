@@ -48,32 +48,40 @@ class YelpSentimentClassifier(PreTrainedOptimus):
             self.hparams.num_labels,
         )
 
-    def training_step(
-        self, batch: LabelledTokensBatch, batch_idx: int
+    def _log_metrics(
+        self, metrics: Dict[str, torch.Tensor], prefix: str
+    ) -> None:
+        self.log_dict({f"{prefix}/{k}": v.item() for k, v in metrics.items()})
+
+    def _step(
+        self, enc_tokens: torch.Tensor, labels: torch.Tensor, step_name: str
     ) -> Dict[str, torch.Tensor]:
+        outputs = self.forward(enc_tokens, labels=labels)
         # TODO: Calculate accuracy
         # TODO: Confusion matrix
         # TODO: ROC AUC
-        outputs = self.forward(
-            batch.tokens_batch.enc_tokens_batch,
-            labels=batch.labels,
+        metrics = {"loss": outputs[0][0]}
+        self._log_metrics(metrics, step_name)
+        return metrics
+
+    def training_step(
+        self, batch: LabelledTokensBatch, batch_idx: int
+    ) -> Dict[str, torch.Tensor]:
+        return self._step(
+            batch.tokens_batch.enc_tokens_batch, batch.labels, "train"
         )
-        return {"loss": outputs[0]}
 
     def validation_step(
         self, batch: LabelledTokensBatch, batch_idx: int
     ) -> Dict[str, torch.Tensor]:
-        # TODO: Calculate accuracy
-        # TODO: Confusion matrix
-        # TODO: ROC AUC
-        outputs = self.forward(
-            batch.tokens_batch.enc_tokens_batch,
-            labels=batch.labels,
+        return self._step(
+            batch.tokens_batch.enc_tokens_batch, batch.labels, "val"
         )
-        return {"loss": outputs[0]}
 
     def test_step(self, batch, batch_idx):
-        pass
+        return self._step(
+            batch.tokens_batch.enc_tokens_batch, batch.labels, "test"
+        )
 
     def configure_optimizers(self):
         encoder_parameters = [p for p in self.encoder.parameters()]
@@ -175,6 +183,7 @@ class YelpSentimentClassifier(PreTrainedOptimus):
                 )
             outputs = (loss,) + outputs
 
+        # TODO: Return a dataclass, possibly from the Huggingface library.
         # (loss), logits, (hidden_states), (attentions)
         return outputs, pooled_output
 
@@ -185,16 +194,18 @@ if __name__ == "__main__":
     classifier = YelpSentimentClassifier(
         "bert-optimus-cased-snli-latent-768-beta-1",
         "gpt2-optimus-cased-snli-beta-1",
-        val_dataset_size=1,
-        train_dataset_size=1,
+        val_dataset_size=1000,
+        train_dataset_size=10000,
+        batch_size=128,
     )
 
+    log_freq = 10
     trainer = pl.Trainer(
         max_epochs=100,
-        val_check_interval=1,
-        log_every_n_steps=1,
-        # accelerator="gpu",
-        # devices=[0],
+        val_check_interval=log_freq,
+        log_every_n_steps=log_freq,
+        accelerator="gpu",
+        devices=[0],
         default_root_dir="./lightning_logs_classify_train",
     )
     trainer.fit(classifier)

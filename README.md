@@ -14,7 +14,7 @@ An implementation of the paper "Causal Lens for Controllable Text Generation" by
 1. `conda env update -f environment.yml`
 1. `conda activate causal_control_text_gen`
 1. `pre-commit install`
-1. `poetry install`
+1. `poetry update && poetry install`
 
 #### Note: Tested on Mac OS and Amazon P3.8xlarge with Deep Learning AMI.
 ```
