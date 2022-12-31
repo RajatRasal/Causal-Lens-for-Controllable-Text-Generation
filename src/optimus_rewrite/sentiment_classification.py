@@ -1,6 +1,8 @@
+import argparse
 import multiprocessing
 import random
-from typing import Dict
+from dataclasses import dataclass
+from typing import Dict, Optional
 
 import pytorch_lightning as pl
 import torch
@@ -19,9 +21,23 @@ from src.optimus.data import (  # noqa: E501
 from .vae import PreTrainedOptimus
 
 
+@dataclass
+class ClassifierOutput:
+    """
+    Args:
+        logits (`torch.FloatTensor` of shape `(batch_size, 1)`):
+            Classification scores before sigmoid.
+        loss (`torch.FloatTensor` of shape `(1,)` when `labels` is provided):
+            Classification loss.
+    """
+
+    logits: torch.FloatTensor
+    loss: Optional[torch.FloatTensor] = None
+
+
 # TODO: Make this a generic parent class SentimentClassifier and make a Yelp
 # child for this with the train_dataloader and val_dataloader implemented.
-class YelpSentimentClassifier(PreTrainedOptimus):
+class YelpBinarySentimentClassifier(PreTrainedOptimus):
     def __init__(
         self,
         bert_model_name: str,
@@ -29,7 +45,6 @@ class YelpSentimentClassifier(PreTrainedOptimus):
         max_length: int = 64,
         use_freeze: bool = False,
         hidden_dropout_prob: float = 0.5,
-        num_labels: int = 2,
         train_prop: float = 0.8,
         batch_size: int = 256,
         train_dataset_size: int = 10000,
@@ -43,26 +58,28 @@ class YelpSentimentClassifier(PreTrainedOptimus):
             param.requires_grad = False
 
         self.dropout = nn.Dropout(self.hparams.hidden_dropout_prob)
-        self.classifier = nn.Linear(
-            self.encoder.config.hidden_size,
-            self.hparams.num_labels,
-        )
+        self.classifier = nn.Linear(self.encoder.config.hidden_size, 1)
 
     def _log_metrics(
         self, metrics: Dict[str, torch.Tensor], prefix: str
     ) -> None:
         self.log_dict(
             {f"{prefix}/{k}": v.item() for k, v in metrics.items()},
+            on_epoch=True,
+            reduce_fx="mean",
         )
 
     def _step(
-        self, enc_tokens: torch.Tensor, labels: torch.Tensor, step_name: str
+        self,
+        enc_tokens: torch.FloatTensor,
+        labels: torch.LongTensor,
+        step_name: str,
     ) -> Dict[str, torch.Tensor]:
-        outputs = self.forward(enc_tokens, labels=labels)
+        outputs = self.forward(enc_tokens, labels=labels.float())
         # TODO: Calculate accuracy
         # TODO: Confusion matrix
         # TODO: ROC AUC
-        metrics = {"loss": outputs[0][0]}
+        metrics = {"loss": outputs.loss}
         self._log_metrics(metrics, step_name)
         return metrics
 
@@ -126,12 +143,16 @@ class YelpSentimentClassifier(PreTrainedOptimus):
         ds_len = len(ds)
         train_max = self._train_split_size(ds_len)
 
+        indices = range(train_max, ds_len)
+        if self.hparams.val_dataset_size is None:
+            val_dataset_size = len(indices)
+        else:
+            val_dataset_size = min(len(indices), self.hparams.val_dataset_size)
+
         return DataLoader(
             ds,
             sampler=SubsetRandomSampler(
-                random.sample(
-                    range(train_max, ds_len), self.hparams.val_dataset_size
-                ),
+                random.sample(indices, val_dataset_size),
             ),
             batch_size=self.hparams.batch_size,
             collate_fn=collate_labelled_tokens,
@@ -154,58 +175,68 @@ class YelpSentimentClassifier(PreTrainedOptimus):
         position_ids=None,
         head_mask=None,
         labels=None,
-    ):
-        outputs = self.encoder(
+    ) -> ClassifierOutput:
+        pooled_output = self.encoder(
             input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             position_ids=position_ids,
             head_mask=head_mask,
-        )
-
-        pooled_output = outputs[1]
+        )[1]
 
         if self.hparams.use_freeze:
             pooled_output = pooled_output.detach()
 
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output)
-
-        # add hidden states and attention if they are here
-        outputs = (logits,) + outputs[2:]
+        logits = self.classifier(self.dropout(pooled_output))
+        output = ClassifierOutput(logits=logits)
 
         if labels is not None:
-            if self.hparams.num_labels == 1:
-                #  We are doing regression
-                loss = F.mse_loss(logits.view(-1), labels.view(-1))
-            else:
-                loss = F.cross_entropy(
-                    logits.view(-1, self.hparams.num_labels),
-                    labels.view(-1),
-                )
-            outputs = (loss,) + outputs
+            loss = F.binary_cross_entropy_with_logits(
+                logits.view(-1), labels.view(-1)
+            )
+            output.loss = loss
 
-        # TODO: Return a dataclass, possibly from the Huggingface library.
-        # (loss), logits, (hidden_states), (attentions)
-        return outputs, pooled_output
+        return output
 
 
 if __name__ == "__main__":
-    seed_everything(42)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--train-dataset-size", type=int, default=10000)
+    parser.add_argument("--val-dataset-size", type=int)
+    parser.add_argument("--log-freq", type=int, default=50)
+    parser.add_argument("--max-epochs", type=int, default=100)
+    parser.add_argument("--use-freeze", action="store_true")
+    # 128 works fine on 16GB GPU
+    parser.add_argument("--batch-size", type=int, default=128)
+    parser.add_argument("--train-prop", type=float, default=0.8)
+    args = parser.parse_args()
 
-    classifier = YelpSentimentClassifier(
+    seed_everything(args.seed)
+
+    # TODO: Automate this process using tune.
+    # If the train_dataset_size < 10000
+    # rerun the training procedure 10 times with different random seeds.
+    # After each run, output the test results.
+    # Else, just run once.
+
+    classifier = YelpBinarySentimentClassifier(
         "bert-optimus-cased-snli-latent-768-beta-1",
         "gpt2-optimus-cased-snli-beta-1",
-        val_dataset_size=1000,
-        train_dataset_size=10000,
-        batch_size=128,
+        val_dataset_size=args.val_dataset_size,
+        train_dataset_size=args.train_dataset_size,
+        batch_size=args.batch_size,
+        use_freeze=args.use_freeze,
+        train_prop=args.train_prop,
     )
 
-    log_freq = 50
+    n_batches = args.train_dataset_size // args.batch_size
+    _log_freq = min(args.log_freq, n_batches)
+
     trainer = pl.Trainer(
-        max_epochs=100,
-        val_check_interval=log_freq,
-        log_every_n_steps=log_freq,
+        max_epochs=args.max_epochs,
+        val_check_interval=_log_freq,
+        log_every_n_steps=_log_freq,
         accelerator="gpu",
         devices=[0],
         default_root_dir="./lightning_logs_classify_train",
