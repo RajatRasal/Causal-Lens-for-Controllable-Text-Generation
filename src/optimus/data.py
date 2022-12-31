@@ -222,6 +222,8 @@ class TokenisedSentencesYelpReviewPolarity(Dataset):
         self._reviews_to_sentences()
         self.n_sents = len(self.sentences)
 
+        self._cache = {}
+
     def _reviews_to_sentences(self):
         self.sentences = []
         self.polarity = []
@@ -242,18 +244,24 @@ class TokenisedSentencesYelpReviewPolarity(Dataset):
         return self.n_sents
 
     def __getitem__(self, idx) -> LabelledTokens:
-        return LabelledTokens(
-            tokens=_build_tokens(
-                self.sentences[idx],
-                self.tokeniser_encoder,
-                self.tokeniser_decoder,
-                {
-                    "max_length": self.max_length,
-                    "return_tensors": self.return_tensors,
-                    "truncation": self.truncation,
-                    "padding": self.padding,
-                },
-            ),
-            label=self.polarity[idx],
-            original_doc_id=self.original_review[idx],
-        )
+        if idx not in self._cache:
+            token = LabelledTokens(
+                tokens=_build_tokens(
+                    self.sentences[idx],
+                    self.tokeniser_encoder,
+                    self.tokeniser_decoder,
+                    {
+                        "max_length": self.max_length,
+                        "return_tensors": self.return_tensors,
+                        "truncation": self.truncation,
+                        "padding": self.padding,
+                    },
+                ),
+                label=self.polarity[idx],
+                original_doc_id=self.original_review[idx],
+            )
+            self._cache[idx] = token
+            return token
+        else:
+            print(f"Found {idx}")
+            return self._cache[idx]

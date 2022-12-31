@@ -51,7 +51,9 @@ class YelpSentimentClassifier(PreTrainedOptimus):
     def _log_metrics(
         self, metrics: Dict[str, torch.Tensor], prefix: str
     ) -> None:
-        self.log_dict({f"{prefix}/{k}": v.item() for k, v in metrics.items()})
+        self.log_dict(
+            {f"{prefix}/{k}": v.item() for k, v in metrics.items()},
+        )
 
     def _step(
         self, enc_tokens: torch.Tensor, labels: torch.Tensor, step_name: str
@@ -146,7 +148,7 @@ class YelpSentimentClassifier(PreTrainedOptimus):
 
     def forward(
         self,
-        input_ids,
+        input_ids: torch.Tensor,
         attention_mask=None,
         token_type_ids=None,
         position_ids=None,
@@ -199,7 +201,7 @@ if __name__ == "__main__":
         batch_size=128,
     )
 
-    log_freq = 10
+    log_freq = 50
     trainer = pl.Trainer(
         max_epochs=100,
         val_check_interval=log_freq,
