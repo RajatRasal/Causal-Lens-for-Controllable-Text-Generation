@@ -1,16 +1,16 @@
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
 import torch.nn.functional as F
 
+from src.utils.decoder.top_k_top_p_filtering import top_k_top_p_filtering
 from src.utils.tokeniser.tokeniser import (  # noqa: E501
     bert_pretrained_tokeniser,
     gpt2_pretrained_tokeniser,
 )
 
 from .arch import BertForLatentConnector, GPT2ForLatentConnector
-from .decoding import top_k_top_p_filtering
 
 
 # TODO: Copy more methods from arch.utils to here with tests
@@ -67,7 +67,9 @@ class PreTrainedOptimus(pl.LightningModule):
         eps = torch.randn_like(std)
         return eps.mul(std).add_(mean)
 
-    def encode(self, tokens: torch.Tensor) -> torch.Tensor:
+    def encode(
+        self, tokens: torch.Tensor
+    ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
         encoding = self.encoder(tokens, attention_mask=(tokens > 0).float())[1]
         mean, logvar = self.encoder.linear(encoding).chunk(2, -1)
         return self.reparametrise(mean, logvar), mean, logvar
@@ -77,7 +79,7 @@ class PreTrainedOptimus(pl.LightningModule):
             input_ids=labels,
             past=z,
             labels=labels,
-            label_ignore=self.pad_token_id,
+            label_ignore=self.tokeniser_decoder.pad_token_id,
         )
 
     def conditional_generation(
@@ -87,7 +89,11 @@ class PreTrainedOptimus(pl.LightningModule):
         top_k: int = 0,
         top_p: float = 1.0,
     ) -> torch.Tensor:
-        generated = self.CONTEXT_TOKEN
+        """
+        Strategy = top_k or top_p for 1 latent vector
+        """
+        assert len(z.size()) == 2 and z.size()[0] == 1
+        generated = self.CONTEXT_TOKEN.to(self.device)
         next_token_id = None
         while next_token_id != self.tokeniser_decoder.eos_token_id:
             outputs = self.decoder(input_ids=generated, past=z)[0]
@@ -100,6 +106,27 @@ class PreTrainedOptimus(pl.LightningModule):
             )
             generated = torch.cat((generated, next_token.unsqueeze(0)), dim=1)
             next_token_id = next_token.unsqueeze(0)[0, 0].item()
+        return generated
+
+    def decode(
+        self,
+        z: torch.Tensor,
+        max_length: int,
+        strategy: str = "greedy",
+    ) -> torch.LongTensor:
+        """
+        z: size B x D
+        """
+        generated = self.CONTEXT_TOKEN.repeat(z.size()[0], 1).to(self.device)
+        for _ in range(max_length):
+            outputs = self.decoder(input_ids=generated, past=z)[0]
+            next_token_logits = outputs[:, -1, :]
+            if strategy == "greedy":
+                next_token = torch.argmax(next_token_logits, dim=1)
+            else:
+                probs = F.softmax(next_token_logits, dim=1)
+                next_token = torch.multinomial(probs, num_samples=1).squeeze(1)
+            generated = torch.cat((generated, next_token.unsqueeze(1)), dim=1)
         return generated
 
     def reconstruct(

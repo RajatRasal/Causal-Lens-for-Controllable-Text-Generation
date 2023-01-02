@@ -24,6 +24,7 @@ from .configuration_utils import PretrainedConfig
 logger = logging.getLogger(__name__)
 
 BERT_PRETRAINED_CONFIG_ARCHIVE_MAP = {
+    # TODO: Incorporate BioVAE
     # TODO: Upload models to S3 and set up bucket for serving
     # Models from https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimius_for_snli.md
     "bert-optimus-cased-snli-latent-768-beta-1": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-snli-latent-768-beta-1.json",

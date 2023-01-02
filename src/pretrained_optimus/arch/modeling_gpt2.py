@@ -452,19 +452,16 @@ class GPT2Model(GPT2PreTrainedModel):
         else:
 
             if latent_as_gpt_emb:
-                past_emb = self.linear_emb(
-                    past
-                )  # used as embeddings to add on other three embeddings
+                # used as embeddings to add on other three embeddings
+                past_emb = self.linear_emb(past)
 
             if latent_as_gpt_memory:
                 past = self.linear(past)
                 share_latent = False
                 if share_latent:
                     # the same latent vector shared by all layers
-                    past = [
-                        past.unsqueeze(-2),
-                        past.unsqueeze(-2),
-                    ]  # query, key
+                    # query, key
+                    past = [past.unsqueeze(-2), past.unsqueeze(-2)]
                     past = [past] * len(self.h)
                     past_length = past[0][0].size(-2)
                 else:
@@ -473,9 +470,6 @@ class GPT2Model(GPT2PreTrainedModel):
                         past.unsqueeze(1), self.config.hidden_size, dim=2
                     )
                     past = list(zip(past_split, past_split))
-
-                    # past = past.view(batch_size,len(self.h),-1)
-                    # past = [[past[:,i,:].unsqueeze(-2), past[:,i,:].unsqueeze(-2) ] for i in range(len(self.h))]
                     past_length = 1  # past[0][0].size(-2)
             else:
                 past_length = 0

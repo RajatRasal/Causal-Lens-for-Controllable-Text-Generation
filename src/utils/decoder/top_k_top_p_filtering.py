@@ -23,7 +23,7 @@ def top_k_top_p_filtering(
 
     From: https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
     """
-    assert logits.dim() == 1
+    # assert logits.dim() == 1
 
     # Safety check
     top_k = min(top_k, logits.size(-1))
