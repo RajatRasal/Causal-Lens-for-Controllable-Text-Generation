@@ -1,4 +1,3 @@
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -39,12 +38,14 @@ class CARA(nn.Module):
 
         self.device = device
 
-        # self.bos_token_id_list = self.tokenizer_decoder.encode(self.tokenizer_decoder.bos_token)
-        self.bos_token_id_list = torch.tensor(
-            [[self.tokenizer_decoder.bos_token_id]],
-            dtype=torch.long,
-            device=self.device,
+        self.bos_token_id_list = self.tokenizer_decoder.encode(
+            self.tokenizer_decoder.bos_token
         )
+        # self.bos_token_id_list = torch.tensor(
+        #     [self.tokenizer_decoder.bos_token_id],
+        #     dtype=torch.long,
+        #     device=self.device,
+        # )
         self.pad_token_id = self.tokenizer_decoder.pad_token_id
 
         # connector: from Bert hidden units to the latent space
@@ -215,7 +216,7 @@ class CARA(nn.Module):
             + (loss_lsd + loss_lsg)
             + self.beta_cls * loss_cls
         )  # + loss_at_soft_cls
-        loss = loss_rec + 0.0 * loss_latent_space
+        loss = loss_rec + 1.0 * loss_latent_space
 
         if not self.training:
             # Generate based on encoded z and gt labels
@@ -481,9 +482,6 @@ def gumbel_softmax(logits, temperature, hard=False):
         y = (y_hard - y).detach() + y
 
     return y  # (..., n_class)
-
-
-from torch.nn import functional as F
 
 
 def gumbel_softmax_sample(logits, temperature):

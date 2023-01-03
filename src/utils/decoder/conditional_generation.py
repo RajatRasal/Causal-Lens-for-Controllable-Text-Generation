@@ -2,7 +2,6 @@ import torch
 from torch import nn
 
 
-
 def batch_conditional_generation(
     decoder: nn.Module,
     input_ids: torch.LongTensor,
