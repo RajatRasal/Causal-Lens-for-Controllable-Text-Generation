@@ -3,7 +3,7 @@ import argparse
 import torch
 from lightning_lite.utilities.seed import seed_everything
 
-from .yelp_conditional_text_generation2 import YelpConditionalSentenceGenerator
+from .conditional_text_generation import YelpConditionalSentenceGenerator
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

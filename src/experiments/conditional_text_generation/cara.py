@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from src.utils.transforms.gumbel import gumbel_softmax
+
 
 class CARA(nn.Module):
     def __init__(
@@ -19,6 +21,7 @@ class CARA(nn.Module):
         temperature=1.0,
         top_k=5,
         top_p=0,
+        latent_scale_factor=1.0,
     ):
         super().__init__()
         self.encoder = encoder
@@ -26,7 +29,6 @@ class CARA(nn.Module):
         self.tokenizer_encoder = tokenizer_encoder
         self.tokenizer_decoder = tokenizer_decoder
 
-        # self.args = args
         self.nz = latent_size
         self.label_size = label_size
         self.block_size = block_size
@@ -35,6 +37,7 @@ class CARA(nn.Module):
         self.temperature = temperature
         self.top_k = top_k
         self.top_p = top_p
+        self.latent_scale_factor = latent_scale_factor
 
         self.device = device
 
@@ -190,7 +193,7 @@ class CARA(nn.Module):
             + (loss_lsd + loss_lsg)
             + self.beta_cls * loss_cls
         )
-        loss = loss_rec + 1.0 * loss_latent_space
+        loss = loss_rec + self.latent_scale_factor * loss_latent_space
 
         if not self.training:
             # Generate based on encoded z and gt labels
@@ -408,38 +411,3 @@ class CARA(nn.Module):
                 break
 
         return generated_soft  # (B, seq_len, vocab_size)
-
-
-def gumbel_softmax(logits, temperature, hard=False):
-    """Sample from the Gumbel-Softmax distribution and optionally discretize.
-    Args:
-        logits: [..., n_class] unnormalized log-probs
-        temperature: non-negative scalar
-        hard: if True, take argmax, but differentiate w.r.t. soft sample y
-    Returns:
-        [..., n_class] sample from the Gumbel-Softmax distribution.
-        If hard=True, then the returned sample will be one-hot, otherwise it
-        will be a probabilitiy distribution that sums to 1 across classes
-    """
-    y = gumbel_softmax_sample(logits, temperature)  # (..., n_class)
-
-    if hard:  # return onehot
-        shape = y.size()
-        _, ind = y.max(dim=-1)
-        y_hard = torch.zeros_like(y).view(-1, shape[-1])
-        y_hard.scatter_(1, ind.view(-1, 1), 1)  # one hot
-        y_hard = y_hard.view(*shape)
-        # Set gradients w.r.t. y_hard gradients w.r.t. y
-        y = (y_hard - y).detach() + y
-
-    return y  # (..., n_class)
-
-
-def gumbel_softmax_sample(logits, temperature):
-    y = logits + sample_gumbel(logits.size(), logits.device)
-    return F.softmax(y / temperature, dim=-1)
-
-
-def sample_gumbel(shape, device, eps=1e-20):
-    U = torch.rand(shape).to(device=device)
-    return -torch.log(-torch.log(U + eps) + eps)
