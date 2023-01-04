@@ -23,14 +23,14 @@ if __name__ == "__main__":
         cond_labels = torch.tensor([args.cond_label]).long()
         input_seq_ids = torch.tensor([[101]])
         attention_mask = torch.tensor([[True]])
-
         pooled_hidden_fea = model.encoder(
             input_seq_ids, attention_mask=attention_mask
         )[1]
         latent_z = model.cara.linear(pooled_hidden_fea)
         label_emb = model.cara.label_embedding(cond_labels)
         past = latent_z + label_emb
-        generated = model.cara.sample_sequence_conditional_batch(
-            past=past, context=model.cara.bos_token_id_list
-        )
+        generated = model.conditional_generation(past)
+        # generated = model.cara.sample_sequence_conditional_batch(
+        #     past=past, context=model.cara.bos_token_id_list
+        # )
         print(model.untokenise(generated.squeeze(0)))
