@@ -26,6 +26,7 @@ class YelpConditionalSentenceGenerator(YelpPreTrainedOptimus):
             self.tokeniser_decoder,
             self.decoder.config.n_embd,
             self.device,
+            block_size=self.hparams.max_length,
         )
 
     def training_step(

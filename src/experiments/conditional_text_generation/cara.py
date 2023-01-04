@@ -305,16 +305,14 @@ class CARA(nn.Module):
             lm_logits = outputs[0]
 
             # softmax sample
-            next_tokens_logits = (
-                lm_logits[:, -1, :] / self.temperature
-            )  # (B, 1, vocab_size)
+            # (B, 1, vocab_size)
+            next_tokens_logits = lm_logits[:, -1, :] / self.temperature
             filtered_logits = self.top_k_top_p_filtering_batch(
                 next_tokens_logits, top_k=self.top_k, top_p=self.top_p
             )  # (B, 1, vocab_size)
             filtered_logits = F.softmax(filtered_logits, dim=-1)
-            next_tokens = torch.multinomial(
-                filtered_logits, num_samples=1
-            )  # (B, 1)
+            # (B, 1)
+            next_tokens = torch.multinomial(filtered_logits, num_samples=1)
             # (B, seq_len+1)
             generated = torch.cat((generated, next_tokens), dim=1)
 
@@ -348,24 +346,23 @@ class CARA(nn.Module):
             logits.masked_fill_(logits < threshold, filter_value)
 
         if top_p > 0.0:
-            sorted_logits, sorted_indices = torch.sort(
-                logits, descending=True
-            )  # (B, vocab_size)
-            cumulative_probs = torch.cumsum(
-                F.softmax(sorted_logits, dim=-1), dim=-1
-            )  # (B, vocab_size)
+            # (B, vocab_size)
+            sorted_logits, sorted_indices = torch.sort(logits, descending=True)
+            softmax_sorted_logits = F.softmax(sorted_logits, dim=-1)
+            # (B, vocab_size)
+            cumulative_probs = torch.cumsum(softmax_sorted_logits, dim=-1)
 
             # Remove tokens with cumulative probability above the threshold
-            filter_mask = cumulative_probs > top_p
+            remove_mask = cumulative_probs > top_p
 
             # Shift the indices to the right to keep also the first token
             # above the threshold
-            filter_mask[..., 1:] = filter_mask[..., :-1].clone()
-            filter_mask[..., 0] = 0
+            remove_mask[..., 1:] = remove_mask[..., :-1].clone()
+            remove_mask[..., 0] = 0
 
-            indices_to_remove = sorted_indices[filter_mask]
-
-            logits.masked_fill_(indices_to_remove, filter_value)
+            indices_to_remove = sorted_indices[remove_mask]
+            logits[indices_to_remove] = filter_value
+            # logits.masked_fill_(indices_to_remove, filter_value)
 
         return logits
 

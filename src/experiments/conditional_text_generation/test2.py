@@ -8,6 +8,7 @@ from .yelp_conditional_text_generation2 import YelpConditionalSentenceGenerator
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--cond-label", type=int, default=0, choices=[0, 1])
     args = parser.parse_args()
 
     seed_everything(args.seed)
@@ -15,9 +16,11 @@ if __name__ == "__main__":
     model = YelpConditionalSentenceGenerator.load_from_checkpoint(
         checkpoint_path="/home/ubuntu/Causal-Lens-for-Controllable-Text-Generation/lightning_logs_generate2/lightning_logs/version_2/checkpoints/epoch=0-step=8000.ckpt",  # noqa: E501
     ).eval()
+    # model.cara.top_p = 1.0
+    # model.cara.top_k = 0
 
     for _ in range(10):
-        cond_labels = torch.tensor([1]).long()
+        cond_labels = torch.tensor([args.cond_label]).long()
         input_seq_ids = torch.tensor([[101]])
         attention_mask = torch.tensor([[True]])
 
