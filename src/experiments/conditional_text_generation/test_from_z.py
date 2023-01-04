@@ -3,18 +3,17 @@ import argparse
 import torch
 from lightning_lite.utilities.seed import seed_everything
 
-from .yelp_conditional_text_generation import YelpConditionalSentenceGenerator
+from .conditional_text_generation import YelpConditionalSentenceGenerator
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--cond-label", type=int, default=0, choices=[0, 1])
     args = parser.parse_args()
 
     seed_everything(args.seed)
 
     model = YelpConditionalSentenceGenerator.load_from_checkpoint(
-        checkpoint_path="/home/ubuntu/Causal-Lens-for-Controllable-Text-Generation/lightning_logs_generate2/lightning_logs/version_2/checkpoints/epoch=0-step=8000.ckpt",  # noqa: E501
+        checkpoint_path="/home/ubuntu/Causal-Lens-for-Controllable-Text-Generation/lightning_logs_generate2/lightning_logs/version_7/checkpoints/epoch=29-step=82076.ckpt",  # noqa: E501
     ).eval()
     dataloader = model.test_dataloader()
     # model.cara.top_p = 1.0
@@ -36,13 +35,11 @@ if __name__ == "__main__":
             batch.sentences, _batch.labels, batch.enc_tokens_batch
         ):
             print(label.item(), "-", sent)
-            cond_label = torch.tensor([label]).long()
-            cond_label_flip = torch.tensor([not label]).long()
-            print("Same:", _gen_helper(tokens, cond_label))
-            print("Flip:", _gen_helper(tokens, cond_label_flip))
+            cond_0 = torch.tensor([0]).long()
+            cond_05 = torch.tensor([0.5]).long()
+            cond_1 = torch.tensor([1]).long()
+            print("0", _gen_helper(tokens, cond_0))
+            print("05", _gen_helper(tokens, cond_05))
+            print("1", _gen_helper(tokens, cond_1))
             print()
         break
-    # generated = model.cara.sample_sequence_conditional_batch(
-    #     past=past, context=model.cara.bos_token_id_list
-    # )
-    # print(model.untokenise(generated.squeeze(0)))

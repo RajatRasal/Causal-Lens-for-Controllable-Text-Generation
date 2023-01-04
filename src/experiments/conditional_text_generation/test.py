@@ -14,7 +14,7 @@ if __name__ == "__main__":
     seed_everything(args.seed)
 
     model = YelpConditionalSentenceGenerator.load_from_checkpoint(
-        checkpoint_path="/home/ubuntu/Causal-Lens-for-Controllable-Text-Generation/lightning_logs_generate2/lightning_logs/version_2/checkpoints/epoch=0-step=8000.ckpt",  # noqa: E501
+        checkpoint_path="/home/ubuntu/Causal-Lens-for-Controllable-Text-Generation/lightning_logs_generate2/lightning_logs/version_7/checkpoints/epoch=29-step=82076.ckpt",  # noqa: E501
     ).eval()
     # model.cara.top_p = 1.0
     # model.cara.top_k = 0
