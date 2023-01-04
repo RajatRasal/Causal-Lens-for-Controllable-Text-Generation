@@ -13,7 +13,7 @@ from torchmetrics.functional.classification import (  # noqa: E501
     binary_f1_score,
 )
 
-from src.pretrained_optimus.vae import PreTrainedOptimus
+from src.pretrained_optimus.base import PreTrainedOptimus
 from src.utils.data.tokens import (  # noqa: E501
     LabelledTokensBatch,
     collate_labelled_tokens,

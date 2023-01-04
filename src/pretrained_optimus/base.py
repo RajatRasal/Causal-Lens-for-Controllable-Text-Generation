@@ -9,6 +9,7 @@ from src.utils.tokeniser.tokeniser import (  # noqa: E501
     bert_pretrained_tokeniser,
     gpt2_pretrained_tokeniser,
 )
+from src.utils.transforms.reparametrise import reparametrise
 
 from .arch import BertForLatentConnector, GPT2ForLatentConnector
 
@@ -60,19 +61,12 @@ class PreTrainedOptimus(pl.LightningModule):
         )
         return " ".join(out.split()[1:-1])
 
-    def reparametrise(
-        sef, mean: torch.Tensor, logvar: torch.Tensor
-    ) -> torch.Tensor:
-        std = logvar.mul(0.5).exp()
-        eps = torch.randn_like(std)
-        return eps.mul(std).add_(mean)
-
     def encode(
         self, tokens: torch.Tensor
     ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
         encoding = self.encoder(tokens, attention_mask=(tokens > 0).float())[1]
         mean, logvar = self.encoder.linear(encoding).chunk(2, -1)
-        return self.reparametrise(mean, logvar), mean, logvar
+        return reparametrise(mean, logvar), mean, logvar
 
     def decode(self, z: torch.Tensor, labels: torch.Tensor):
         return self.decoder(
@@ -89,6 +83,8 @@ class PreTrainedOptimus(pl.LightningModule):
         top_k: int = 0,
         top_p: float = 1.0,
     ) -> torch.Tensor:
+        # TODO: Implement batch decodings from CARA.
+        # TODO: Implement this in a separate method under utils/.
         """
         Strategy = top_k or top_p for 1 latent vector
         """
@@ -108,12 +104,13 @@ class PreTrainedOptimus(pl.LightningModule):
             next_token_id = next_token.unsqueeze(0)[0, 0].item()
         return generated
 
-    def decode(
+    def sample_decode(
         self,
         z: torch.Tensor,
         max_length: int,
         strategy: str = "greedy",
     ) -> torch.LongTensor:
+        # TODO: Implement this in a separate method under utils/.
         """
         z: size B x D
         """

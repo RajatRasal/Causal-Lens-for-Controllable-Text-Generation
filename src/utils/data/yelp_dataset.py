@@ -2,9 +2,11 @@ import re
 
 from torch.utils.data import Dataset
 from torchtext.datasets import YelpReviewPolarity
+
+# TODO: Use PreTrainedTokeniser from Local
 from transformers import PreTrainedTokenizer
 
-from src.utils.data.tokens import LabelledTokens, build_tokens
+from .tokens import LabelledTokens, build_tokens
 
 
 class TokenisedSentencesYelpReviewPolarity(Dataset):

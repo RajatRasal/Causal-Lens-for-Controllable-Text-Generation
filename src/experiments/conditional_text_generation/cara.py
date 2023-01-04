@@ -19,7 +19,7 @@ class CARA(nn.Module):
         temperature=1.0,
         top_k=5,
         top_p=0,
-    ):  # , args): #
+    ):
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
@@ -41,24 +41,19 @@ class CARA(nn.Module):
         self.bos_token_id_list = self.tokenizer_decoder.encode(
             self.tokenizer_decoder.bos_token
         )
-        # self.bos_token_id_list = torch.tensor(
-        #     [self.tokenizer_decoder.bos_token_id],
-        #     dtype=torch.long,
-        #     device=self.device,
-        # )
         self.pad_token_id = self.tokenizer_decoder.pad_token_id
 
         # connector: from Bert hidden units to the latent space
-        self.linear = nn.Linear(encoder.config.hidden_size, self.nz, bias=False)
+        self.linear = nn.Linear(
+            encoder.config.hidden_size,
+            self.nz,
+            bias=False,
+        )
 
-        # # Standard Normal prior
-        # loc = torch.zeros(self.nz, device=args.device)
-        # scale = torch.ones(self.nz, device=args.device)
-        # self.prior = torch.distributions.normal.Normal(loc, scale)
-
+        # use the same size as latent_z so as to use the same decoder.linear()
         self.label_embedding = nn.Embedding(
             self.label_size, self.nz, padding_idx=0
-        )  # use the same size as latent_z so as to use the same decoder.linear()
+        )
         self.latent_generator = nn.Linear(self.nz, self.nz)
         self.latent_classifier = nn.Linear(
             self.nz, label_size if label_size > 2 else 1
@@ -82,10 +77,12 @@ class CARA(nn.Module):
         self.BCEWithLogitsLoss = torch.nn.BCEWithLogitsLoss()
 
     def forward(self, input_seq_ids, tgt_seq_ids, cond_labels, attention_mask):
-        # inputs: (B, seq_len)
-        # labels: (B, seq_len)
-        # cond_labels: (B), conditional labels.
-
+        """
+        Inputs:
+            inputs: (B, seq_len)
+            labels: (B, seq_len)
+            cond_labels: (B), conditional labels.
+        """
         ones_label = torch.ones_like(cond_labels).to(dtype=torch.float32)
         zeros_label = torch.zeros_like(cond_labels).to(dtype=torch.float32)
         random_noise = torch.nn.init.normal_(
@@ -102,7 +99,7 @@ class CARA(nn.Module):
         # Generate z
         gen_z = self.latent_generator(random_noise)  # (B, nz)
 
-        #################### Latent discriminator for sampling from a simple distribution ####################
+        # ----- Latent discriminator for sampling from a simple distribution
         prob_encode_z_dis = (
             self.latent_discriminator(latent_z).squeeze(1).float()
         )  # (B)
@@ -120,7 +117,7 @@ class CARA(nn.Module):
         # Train sampler adversarially
         loss_lsg = self.BCEWithLogitsLoss(prob_gen_z_dis, ones_label)
 
-        ####################  Latent classifier for disentanglement ####################
+        # ----- Latent classifier for disentanglement
         prob_encode_z_cls = self.latent_classifier(latent_z)  # (B, n_labels)
         if self.label_size <= 2:
             prob_encode_z_cls = prob_encode_z_cls.squeeze(1)  # (B)
@@ -146,27 +143,21 @@ class CARA(nn.Module):
                 prob_encode_z_cls, cond_labels
             )
 
-        #################### Recontruction loss with latent z and label emb ####################
+        # ----- Recontruction loss with latent z and label emb
         # Embed labels
         label_emb = self.label_embedding(cond_labels)  # (B, hidden_size)
-        # past_label = self.decoder.linear(label_emb)    # (B, n_blocks * hidden_size)  # todo: use the same linear layer for latent_z for now.
         if self.label_size <= 2:
             sampled_cond_labels = 1 - cond_labels
         else:
-            raise NotImplementedError  # todo: currently only implemented for binary labels. need to change for multi-class labels.
-        sampled_label_emb = self.label_embedding(
-            sampled_cond_labels
-        )  # (B, hidden_size)
-        # past_sampled_label = self.decoder.linear(sampled_label_emb)    # (B, n_blocks * hidden_size)  # todo: use the same linear layer for latent_z for now.
+            # TODO: Implemented for multi-class labels.
+            raise NotImplementedError
+        # (B, hidden_size)
+        sampled_label_emb = self.label_embedding(sampled_cond_labels)
         past_sampled_label = sampled_label_emb
 
         # Generate based on encoded z and gt labels. (reconstruction)
-        # past_z = self.decoder.linear(latent_z)    # (B, n_blocks * hidden_size)
         past_z = latent_z
-        # gen_past_z = self.decoder.linear(gen_z)    # (B, n_blocks * hidden_size)
         gen_past_z = gen_z  # (B, n_blocks * hidden_size)
-
-        # past = torch.cat([past_z.unsqueeze(1), past_label.unsqueeze(1)], dim=1) # (B, 2, n_blocks * hidden_size)
 
         past = latent_z + label_emb  # (B, n_blocks * hidden_size)
 
@@ -178,9 +169,10 @@ class CARA(nn.Module):
         )
         loss_rec = outputs[0]
 
-        ####################  Train a classifier in the observation space ####################
+        # ----- Train a classifier in the observation space
         tgt_emb = self.gpt_embeddings(tgt_seq_ids)
-        tgt_encode = self.conv1(tgt_emb.transpose(1, 2))  # (B, dim_h, seq_len)
+        # (B, dim_h, seq_len)
+        tgt_encode = self.conv1(tgt_emb.transpose(1, 2))
         tgt_encode = torch.mean(tgt_encode, dim=-1)  # (B, dim_h)
         prob_cls = self.classifier(tgt_encode)  # (B, n_labels)
         if self.label_size <= 2:
@@ -192,30 +184,12 @@ class CARA(nn.Module):
             pred_cls = torch.argmax(prob_cls, dim=-1)
         acc_cls = (pred_cls == cond_labels).float()
 
-        # Generate based on encoded z and sampled labels (attribute transfer)
-        # at_past = torch.cat([past_z.unsqueeze(1), past_sampled_label.unsqueeze(1)], dim=1) # (B, 2, n_blocks * hidden_size)
-        # at_generated_soft = self.sample_sequence_conditional_batch_soft(past=at_past, context=self.bos_token_id_list) # (B, seq_len, vocab_size)
-
-        # # Classifier on attribute transfer generated sentences. Train Generator on attribute transfer.
-        # at_soft_emb = torch.matmul(at_generated_soft, self.gpt_embeddings.weight)
-        # at_soft_encode = self.conv1(at_soft_emb.transpose(1, 2))    # (B, dim_h, seq_len)
-        # at_soft_encode = torch.mean(at_soft_encode, dim=-1)   # (B, dim_h)
-        # prob_at_soft_cls = self.classifier(at_soft_encode)    # (B, 1)
-        # if self.label_size <= 2:
-        #     prob_at_soft_cls = prob_at_soft_cls.squeeze(1)
-        #     loss_at_soft_cls = self.BCEWithLogitsLoss(prob_at_soft_cls, sampled_cond_labels.float())
-        #     pred_at_soft_cls = (prob_at_soft_cls >= 0).to(torch.long)
-        # else:
-        #     loss_at_soft_cls = self.CrossEntropyLoss(prob_at_soft_cls, sampled_cond_labels)
-        #     pred_at_soft_cls = torch.argmax(prob_at_soft_cls, dim=-1)
-        # acc_at_soft_cls = (pred_at_soft_cls == sampled_cond_labels).float()
-
         # Loss
         loss_latent_space = (
             (loss_encoder + loss_lsc)
             + (loss_lsd + loss_lsg)
             + self.beta_cls * loss_cls
-        )  # + loss_at_soft_cls
+        )
         loss = loss_rec + 1.0 * loss_latent_space
 
         if not self.training:
@@ -224,27 +198,27 @@ class CARA(nn.Module):
                 past=past, context=self.bos_token_id_list
             )
 
-            # Generate based on encoded z and sampled labels (attribute transfer)
-            # at_past = torch.cat([past_z.unsqueeze(1), past_sampled_label.unsqueeze(1)], dim=1) # (B, 2, n_blocks * hidden_size)
-            at_past = past_z + past_sampled_label  # (B, n_blocks * hidden_size)
+            # Attribute Transfer
+            # Generate based on encoded z and sampled labels
+            # (B, n_blocks * hidden_size)
+            at_past = past_z + past_sampled_label
+            # (B, seq_len)
             at_generated = self.sample_sequence_conditional_batch(
                 past=at_past, context=self.bos_token_id_list
-            )  # (B, seq_len)
+            )
 
-            # Generate based on sampled z and sampled labels. (conditional generation)
-            # cg_past = torch.cat([gen_past_z.unsqueeze(1), past_sampled_label.unsqueeze(1)], dim=1) # (B, 2, n_blocks * hidden_size)
-            cg_past = (
-                gen_past_z + past_sampled_label
-            )  # (B, n_blocks * hidden_size)
+            # Conditional Generation
+            # Generate based on sampled z and sampled labels.
+            # (B, n_blocks * hidden_size)
+            cg_past = gen_past_z + past_sampled_label
             cg_generated = self.sample_sequence_conditional_batch(
                 past=cg_past, context=self.bos_token_id_list
             )  # (B, seq_len)
 
             # classifier on gt generated sentences.
             ge_emb = self.gpt_embeddings(generated)
-            ge_encode = self.conv1(
-                ge_emb.transpose(1, 2)
-            )  # (B, dim_h, seq_len)
+            # (B, dim_h, seq_len)
+            ge_encode = self.conv1(ge_emb.transpose(1, 2))
             ge_encode = torch.mean(ge_encode, dim=-1)  # (B, dim_h)
             prob_ge_cls = self.classifier(ge_encode)  # (B, 1)
 
@@ -256,9 +230,8 @@ class CARA(nn.Module):
 
             # classifier on attribute transfer generated sentences.
             at_emb = self.gpt_embeddings(at_generated)
-            at_encode = self.conv1(
-                at_emb.transpose(1, 2)
-            )  # (B, dim_h, seq_len)
+            # (B, dim_h, seq_len)
+            at_encode = self.conv1(at_emb.transpose(1, 2))
             at_encode = torch.mean(at_encode, dim=-1)  # (B, dim_h)
             prob_at_cls = self.classifier(at_encode)  # (B, 1)
             if self.label_size <= 2:
@@ -269,9 +242,8 @@ class CARA(nn.Module):
 
             # classifier on conditional generated sentences.
             cg_emb = self.gpt_embeddings(cg_generated)
-            cg_encode = self.conv1(
-                cg_emb.transpose(1, 2)
-            )  # (B, dim_h, seq_len)
+            # (B, dim_h, seq_len)
+            cg_encode = self.conv1(cg_emb.transpose(1, 2))
             cg_encode = torch.mean(cg_encode, dim=-1)  # (B, dim_h)
             prob_cg_cls = self.classifier(cg_encode)  # (B, 1)
             if self.label_size <= 2:
@@ -303,21 +275,19 @@ class CARA(nn.Module):
             return result
 
         loss_dict = {
-            "loss": loss.mean(),
-            "loss_rec": loss_rec.mean(),
+            "loss": loss,
+            "loss_rec": loss_rec,
             "loss_encoder": loss_encoder,
             "loss_lsc": loss_lsc,
             "loss_lsd": loss_lsd,
             "loss_lsg": loss_lsg,
             "loss_cls": loss_cls,
-            # 'loss_at_soft_cls': loss_at_soft_cls,
         }
         acc_dict = {
             "acc_encode_z_dis": acc_encode_z_dis,
             "acc_gen_z_dis": acc_gen_z_dis,
             "acc_encode_z_cls": acc_encode_z_cls,
             "acc_cls": acc_cls,
-            # 'acc_at_soft_cls': acc_at_soft_cls,
         }
         return loss_dict, acc_dict
 
@@ -329,12 +299,9 @@ class CARA(nn.Module):
         context = context.unsqueeze(0).repeat(num_samples, 1)
         generated = context  # (B, 1)
 
-        # with torch.no_grad():
         while generated.size(-1) < self.block_size:
             inputs = {"input_ids": generated, "past": past}
-            outputs = self.decoder(
-                **inputs
-            )  # Note: we could also use 'past' with GPT-2/Transfo-XL/XLNet (cached hidden-states)
+            outputs = self.decoder(**inputs)
             lm_logits = outputs[0]
 
             # softmax sample
@@ -348,9 +315,8 @@ class CARA(nn.Module):
             next_tokens = torch.multinomial(
                 filtered_logits, num_samples=1
             )  # (B, 1)
-            generated = torch.cat(
-                (generated, next_tokens), dim=1
-            )  # (B, seq_len+1)
+            # (B, seq_len+1)
+            generated = torch.cat((generated, next_tokens), dim=1)
 
             not_finished = (
                 next_tokens != self.tokenizer_decoder.encode("<EOS>")[0]
@@ -366,21 +332,20 @@ class CARA(nn.Module):
         """Filter a distribution of logits using top-k and/or nucleus (top-p) filtering
         Args:
             logits: logits distribution shape (vocabulary size)
-            top_k > 0: keep only top k tokens with highest probability (top-k filtering).
-            top_p > 0.0: keep the top tokens with cumulative probability >= top_p (nucleus filtering).
-                Nucleus filtering is described in Holtzman et al. (http://arxiv.org/abs/1904.09751)
+            top_k > 0: keep only top k tokens with highest probability
+                (top-k filtering).
+            top_p > 0.0: keep the top tokens with cumulative prob >= top_p
+                (nucleus filtering) - (http://arxiv.org/abs/1904.09751).
         From: https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
         """
-        # assert logits.dim() == 1  # batch size 1 for now - could be updated for more but the code would be less clear
-
         top_k = min(top_k, logits.size(-1))  # Safety check
 
         if top_k > 0:
-            # Remove all tokens with a probability less than the last token of the top-k
+            # Remove all tokens with a probability less than the last token of
+            # the top-k
             threshold = torch.topk(logits, top_k, dim=-1)[0][:, -1, None]
-            logits.masked_fill_(
-                logits < threshold, filter_value
-            )  #  (B, vocab_size)
+            # (B, vocab_size)
+            logits.masked_fill_(logits < threshold, filter_value)
 
         if top_p > 0.0:
             sorted_logits, sorted_indices = torch.sort(
@@ -391,15 +356,14 @@ class CARA(nn.Module):
             )  # (B, vocab_size)
 
             # Remove tokens with cumulative probability above the threshold
-            sorted_indices_to_remove = cumulative_probs > top_p
+            filter_mask = cumulative_probs > top_p
 
-            # Shift the indices to the right to keep also the first token above the threshold
-            sorted_indices_to_remove[..., 1:] = sorted_indices_to_remove[
-                ..., :-1
-            ].clone()
-            sorted_indices_to_remove[..., 0] = 0
+            # Shift the indices to the right to keep also the first token
+            # above the threshold
+            filter_mask[..., 1:] = filter_mask[..., :-1].clone()
+            filter_mask[..., 0] = 0
 
-            indices_to_remove = sorted_indices[sorted_indices_to_remove]
+            indices_to_remove = sorted_indices[filter_mask]
 
             logits.masked_fill_(indices_to_remove, filter_value)
 
@@ -423,13 +387,10 @@ class CARA(nn.Module):
         generated_soft = context_soft.unsqueeze(1)  # (B, 1, vocab_size)
 
         # with torch.no_grad():
-        while (
-            generated_soft.size(1) < self.block_size
-        ):  # generated_soft: (B, seq_len, vocab_size)
+        # generated_soft: (B, seq_len, vocab_size)
+        while generated_soft.size(1) < self.block_size:
             inputs = {"soft_ids": generated_soft, "past": past}
-            outputs = self.decoder(
-                **inputs
-            )  # Note: we could also use 'past' with GPT-2/Transfo-XL/XLNet (cached hidden-states)
+            outputs = self.decoder(**inputs)
             lm_logits = outputs[0]  # (B, seq_len, vocab_size)
 
             # Gumbel softmax sample
@@ -442,13 +403,6 @@ class CARA(nn.Module):
                 (generated_soft, next_tokens_soft), dim=1
             )  # (B, seq_len+1, vocab_size)
 
-            # # softmax sample
-            # next_tokens_logits = lm_logits[:, -1, :] / self.args.temperature  # (B, 1, vocab_size)
-            # filtered_logits = self.top_k_top_p_filtering_batch(next_tokens_logits, top_k=self.args.top_k, top_p=self.args.top_p)  # (B, 1, vocab_size)
-            # filtered_logits = F.softmax(filtered_logits, dim=-1)
-            # next_tokens = torch.multinomial(filtered_logits, num_samples=1)   # (B, 1)
-            # generated = torch.cat((generated, next_tokens), dim=1)  # (B, seq_len+1)
-
             next_tokens = torch.argmax(next_tokens_soft, dim=-1)  # (B, 1)
             not_finished = (
                 next_tokens != self.tokenizer_decoder.encode("<EOS>")[0]
@@ -459,7 +413,6 @@ class CARA(nn.Module):
         return generated_soft  # (B, seq_len, vocab_size)
 
 
-### Gumbel Softmax
 def gumbel_softmax(logits, temperature, hard=False):
     """Sample from the Gumbel-Softmax distribution and optionally discretize.
     Args:
@@ -468,7 +421,8 @@ def gumbel_softmax(logits, temperature, hard=False):
         hard: if True, take argmax, but differentiate w.r.t. soft sample y
     Returns:
         [..., n_class] sample from the Gumbel-Softmax distribution.
-        If hard=True, then the returned sample will be one-hot, otherwise it will be a probabilitiy distribution that sums to 1 across classes
+        If hard=True, then the returned sample will be one-hot, otherwise it
+        will be a probabilitiy distribution that sums to 1 across classes
     """
     y = gumbel_softmax_sample(logits, temperature)  # (..., n_class)
 
