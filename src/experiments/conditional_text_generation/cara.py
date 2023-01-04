@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from src.utils.transforms.gumbel import gumbel_softmax
+from src.utils.decoder.top_k_top_p_filtering import top_k_top_p_filtering
 
 
 class CARA(nn.Module):
@@ -310,7 +310,8 @@ class CARA(nn.Module):
             # softmax sample
             # (B, 1, vocab_size)
             next_tokens_logits = lm_logits[:, -1, :] / self.temperature
-            filtered_logits = self.top_k_top_p_filtering_batch(
+            # TODO: Make this function batch compatible
+            filtered_logits = top_k_top_p_filtering(
                 next_tokens_logits, top_k=self.top_k, top_p=self.top_p
             )  # (B, 1, vocab_size)
             filtered_logits = F.softmax(filtered_logits, dim=-1)
@@ -326,88 +327,3 @@ class CARA(nn.Module):
                 break
 
         return generated  # (B, seq_len)
-
-    def top_k_top_p_filtering_batch(
-        self, logits, top_k=0, top_p=0.0, filter_value=-float("Inf")
-    ):
-        """Filter a distribution of logits using top-k and/or nucleus (top-p) filtering
-        Args:
-            logits: logits distribution shape (vocabulary size)
-            top_k > 0: keep only top k tokens with highest probability
-                (top-k filtering).
-            top_p > 0.0: keep the top tokens with cumulative prob >= top_p
-                (nucleus filtering) - (http://arxiv.org/abs/1904.09751).
-        From: https://gist.github.com/thomwolf/1a5a29f6962089e871b94cbd09daf317
-        """
-        top_k = min(top_k, logits.size(-1))  # Safety check
-
-        if top_k > 0:
-            # Remove all tokens with a probability less than the last token of
-            # the top-k
-            threshold = torch.topk(logits, top_k, dim=-1)[0][:, -1, None]
-            # (B, vocab_size)
-            logits.masked_fill_(logits < threshold, filter_value)
-
-        if top_p > 0.0:
-            # (B, vocab_size)
-            sorted_logits, sorted_indices = torch.sort(logits, descending=True)
-            softmax_sorted_logits = F.softmax(sorted_logits, dim=-1)
-            # (B, vocab_size)
-            cumulative_probs = torch.cumsum(softmax_sorted_logits, dim=-1)
-
-            # Remove tokens with cumulative probability above the threshold
-            remove_mask = cumulative_probs > top_p
-
-            # Shift the indices to the right to keep also the first token
-            # above the threshold
-            remove_mask[..., 1:] = remove_mask[..., :-1].clone()
-            remove_mask[..., 0] = 0
-
-            indices_to_remove = sorted_indices[remove_mask]
-            logits[indices_to_remove] = filter_value
-            # logits.masked_fill_(indices_to_remove, filter_value)
-
-        return logits
-
-    def sample_sequence_conditional_batch_soft(self, past, context):
-        # context: a single id of <BOS>
-        # past: (B, past_seq_len dim_h)
-        num_samples = past.size(0)
-        context = (
-            torch.tensor(context, dtype=torch.long, device=past.device)
-            .unsqueeze(0)
-            .repeat(num_samples, 1)
-        )  # (B, 1)
-        context_soft = (
-            torch.FloatTensor(num_samples, self.decoder.config.vocab_size)
-            .zero_()
-            .to(device=past.device)
-        )  # (B, vocab_size)
-        context_soft.scatter_(1, context, 1)  # (B, vocab_size)
-        generated_soft = context_soft.unsqueeze(1)  # (B, 1, vocab_size)
-
-        # with torch.no_grad():
-        # generated_soft: (B, seq_len, vocab_size)
-        while generated_soft.size(1) < self.block_size:
-            inputs = {"soft_ids": generated_soft, "past": past}
-            outputs = self.decoder(**inputs)
-            lm_logits = outputs[0]  # (B, seq_len, vocab_size)
-
-            # Gumbel softmax sample
-            next_tokens_soft = gumbel_softmax(
-                logits=lm_logits[:, -1:, :],
-                temperature=self.soft_temperature,
-                hard=False,
-            )  # (B, 1, vocab_size)
-            generated_soft = torch.cat(
-                (generated_soft, next_tokens_soft), dim=1
-            )  # (B, seq_len+1, vocab_size)
-
-            next_tokens = torch.argmax(next_tokens_soft, dim=-1)  # (B, 1)
-            not_finished = (
-                next_tokens != self.tokenizer_decoder.encode("<EOS>")[0]
-            )
-            if torch.sum(not_finished) == 0:
-                break
-
-        return generated_soft  # (B, seq_len, vocab_size)

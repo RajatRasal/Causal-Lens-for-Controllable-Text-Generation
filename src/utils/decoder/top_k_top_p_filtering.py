@@ -29,15 +29,16 @@ def top_k_top_p_filtering(
     top_k = min(top_k, logits.size(-1))
 
     if top_k > 0:
-        # Remove all tokens with a probability less than the last token of the
-        # top-k
+        # Remove all tokens with prob less than the last token of top-k
         _threshold = torch.topk(logits, top_k)[0][..., -1, None]
-        indices_to_remove = logits < _threshold
-        logits[indices_to_remove] = filter_value
+        logits[logits < _threshold] = filter_value
 
     if top_p > 0.0:
+        # TODO: Make this batch compatible
+        # (B, vocab_size)
         sorted_logits, sorted_indices = torch.sort(logits, descending=True)
         softmax_sorted_logits = F.softmax(sorted_logits, dim=-1)
+        # (B, vocab_size)
         cumulative_probs = torch.cumsum(softmax_sorted_logits, dim=-1)
 
         # Remove tokens with cumulative probability above the threshold
