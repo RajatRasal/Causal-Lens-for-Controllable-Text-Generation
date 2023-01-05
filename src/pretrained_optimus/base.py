@@ -25,20 +25,41 @@ class PreTrainedOptimus(pl.LightningModule):
 
     def __init__(
         self,
-        bert_model_name: str,
-        gpt2_model_name: str,
+        pretrained_latent_dim: int = 32,
+        pretrained_beta: float = 1.0,
+        pretrained_dataset: str = None,
     ):
+        if pretrained_latent_dim not in [32, 768]:
+            raise ValueError(
+                f"pretrained_latent_dim must be either 32 or 768, not {pretrained_latent_dim}"  # noqa: E501
+            )
+
+        if pretrained_beta not in [0.0, 0.5, 1.0]:
+            raise ValueError(
+                f"pretrained_beta must be 0.0, 0.5 or 1.0, not {pretrained_beta}"  # noqa: E501
+            )
+
+        if pretrained_dataset not in ["snli", "wiki", None]:
+            raise ValueError(
+                f"pretrained_dataset must be snli, wiki or NONE, not {pretrained_dataset}"  # noqa: E501
+            )
+
         super().__init__()
         self.save_hyperparameters()
 
         self.tokeniser_encoder = bert_pretrained_tokeniser()
         self.tokeniser_decoder = gpt2_pretrained_tokeniser()
 
+        model_name = f"latent-{self.hparams.pretrained_latent_dim}"
+        model_name += f"-beta-{self.hparams.pretrained_beta}"
+        if self.hparams.pretrained_dataset is not None:
+            model_name += f"-dataset-{self.hparams.pretrained_dataset}"
+
         self.encoder = BertForLatentConnector.from_pretrained(
-            self.hparams.bert_model_name
+            f"bert-optimus-cased-{model_name}"
         )
         self.decoder = GPT2ForLatentConnector.from_pretrained(
-            self.hparams.gpt2_model_name
+            f"gpt2-optimus-cased-{model_name}"
         )
 
         self.CONTEXT_TOKEN = torch.tensor(

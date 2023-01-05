@@ -14,8 +14,9 @@ class YelpPreTrainedOptimus(FineTunedOptimus):
     def __init__(
         self,
         # PreTrainedOptimus
-        bert_model_name: str,
-        gpt2_model_name: str,
+        pretrained_latent_dim: int,
+        pretrained_beta: float,
+        pretrained_dataset: str,
         # FineTunedOptimus
         use_beta_schedule: bool = True,
         beta: float = 1.0,
@@ -30,7 +31,9 @@ class YelpPreTrainedOptimus(FineTunedOptimus):
         val_dataset_size: int = 1000,
         storage_root: str = "./data",
     ):
-        super().__init__(bert_model_name, gpt2_model_name, batch_size)
+        super().__init__(
+            pretrained_latent_dim, pretrained_beta, pretrained_dataset
+        )
         self.save_hyperparameters()
 
         self._ds = {}

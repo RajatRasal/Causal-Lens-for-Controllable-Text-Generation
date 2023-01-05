@@ -12,8 +12,11 @@ from .base import PreTrainedOptimus
 class FineTunedOptimus(PreTrainedOptimus):
     def __init__(
         self,
-        bert_model_name: str,
-        gpt2_model_name: str,
+        # PreTrainedOptimus
+        pretrained_latent_dim: int,
+        pretrained_beta: float,
+        pretrained_dataset: str,
+        # FineTunedOptimus
         use_beta_schedule: bool = True,
         beta: float = 1.0,
         beta_cycle_len: int = 10,
@@ -22,7 +25,9 @@ class FineTunedOptimus(PreTrainedOptimus):
         lr: float = 5e-5,
         eps: float = 1e-8,
     ):
-        super().__init__(bert_model_name, gpt2_model_name)
+        super().__init__(
+            pretrained_latent_dim, pretrained_beta, pretrained_dataset
+        )
         self.save_hyperparameters()
 
         self.beta_cycle = None

@@ -27,8 +27,9 @@ if __name__ == "__main__":
     # Else, just run once.
 
     classifier = YelpBinarySentimentClassifier(
-        "bert-optimus-cased-snli-latent-768-beta-1",
-        "gpt2-optimus-cased-snli-beta-1",
+        pretrained_latent_dim=32,
+        pretrained_beta=0.5,
+        pretrained_dataset="wiki",
         val_dataset_size=args.val_dataset_size,
         train_dataset_size=args.train_dataset_size,
         batch_size=args.batch_size,

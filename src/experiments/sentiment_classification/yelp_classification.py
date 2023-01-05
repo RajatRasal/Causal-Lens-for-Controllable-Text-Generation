@@ -1,5 +1,3 @@
-import multiprocessing
-import random
 from dataclasses import dataclass
 from typing import Dict, Optional
 
@@ -7,19 +5,13 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.optim import Adam
-from torch.utils.data import DataLoader, SubsetRandomSampler
 from torchmetrics.functional.classification import (  # noqa: E501
     binary_accuracy,
     binary_f1_score,
 )
 
-from src.pretrained_optimus.base import PreTrainedOptimus
-from src.utils.data.tokens import (  # noqa: E501
-    LabelledTokensBatch,
-    collate_labelled_tokens,
-)
-
-from .data import TokenisedSentencesYelpReviewPolarity
+from src.pretrained_optimus.base_yelp import YelpPreTrainedOptimus
+from src.utils.data.tokens import LabelledTokensBatch
 
 
 # TODO: Move to utils
@@ -39,22 +31,16 @@ class ClassifierOutput:
 
 # TODO: Make this a generic parent class SentimentClassifier and make a Yelp
 # child for this with the train_dataloader and val_dataloader implemented.
-class YelpBinarySentimentClassifier(PreTrainedOptimus):
+class YelpBinarySentimentClassifier(YelpPreTrainedOptimus):
     def __init__(
         self,
-        bert_model_name: str,
-        gpt2_model_name: str,
-        max_length: int = 64,
-        use_freeze: bool = False,
         hidden_dropout_prob: float = 0.5,
-        train_prop: float = 0.8,
-        batch_size: int = 256,
-        train_dataset_size: int = 10000,
-        val_dataset_size: int = 1000,
-        lr: int = 5e-5,
+        use_freeze: bool = False,
+        # PreTrainedOptimus, FineTunedOptimus, YelpPreTrainedOptimus
+        **kwargs,
     ):
         self.save_hyperparameters()
-        super().__init__(bert_model_name, gpt2_model_name)
+        super().__init__(**kwargs)
 
         for param in self.decoder.parameters():
             param.requires_grad = False
@@ -77,7 +63,7 @@ class YelpBinarySentimentClassifier(PreTrainedOptimus):
         labels: torch.LongTensor,
         step_name: str,
     ) -> Dict[str, torch.Tensor]:
-        outputs = self.forward(enc_tokens, labels=labels.float())
+        outputs = self(enc_tokens, labels=labels.float())
         preds = torch.round(F.sigmoid(outputs.logits)).long().flatten()
 
         # TODO: Confusion matrix
@@ -117,79 +103,13 @@ class YelpBinarySentimentClassifier(PreTrainedOptimus):
             lr=self.hparams.lr,
         )
 
-    def _dataset(self, split: str) -> TokenisedSentencesYelpReviewPolarity:
-        return TokenisedSentencesYelpReviewPolarity(
-            tokeniser_encoder=self.tokeniser_encoder,
-            tokeniser_decoder=self.tokeniser_decoder,
-            split=split,
-            root="./data",
-            max_length=self.hparams.max_length,
-        )
-
-    def _train_split_size(self, ds_len: int) -> int:
-        return int(ds_len * self.hparams.train_prop)
-
-    def train_dataloader(self) -> DataLoader:
-        ds = self._dataset("train")
-        train_max = self._train_split_size(len(ds))
-
-        return DataLoader(
-            ds,
-            sampler=SubsetRandomSampler(
-                random.sample(
-                    range(train_max), self.hparams.train_dataset_size
-                ),
-            ),
-            batch_size=self.hparams.batch_size,
-            collate_fn=collate_labelled_tokens,
-            num_workers=multiprocessing.cpu_count() - 1,
-        )
-
-    def val_dataloader(self) -> DataLoader:
-        ds = self._dataset("train")
-        ds_len = len(ds)
-        train_max = self._train_split_size(ds_len)
-
-        indices = range(train_max, ds_len)
-        if self.hparams.val_dataset_size is None:
-            val_dataset_size = len(indices)
-        else:
-            val_dataset_size = min(len(indices), self.hparams.val_dataset_size)
-
-        return DataLoader(
-            ds,
-            sampler=SubsetRandomSampler(
-                random.sample(indices, val_dataset_size),
-            ),
-            batch_size=self.hparams.batch_size,
-            collate_fn=collate_labelled_tokens,
-            num_workers=multiprocessing.cpu_count() - 1,
-        )
-
-    def test_dataloader(self) -> DataLoader:
-        return DataLoader(
-            self._dataset("test"),
-            batch_size=self.hparams.batch_size,
-            collate_fn=collate_labelled_tokens,
-            num_workers=multiprocessing.cpu_count() - 1,
-        )
-
     def forward(
         self,
-        input_ids: torch.Tensor,
-        attention_mask=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        labels=None,
+        input_ids: torch.LongTensor,
+        labels: torch.FloatTensor = None,
+        att_mask: torch.BoolTensor = None,
     ) -> ClassifierOutput:
-        pooled_output = self.encoder(
-            input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            position_ids=position_ids,
-            head_mask=head_mask,
-        )[1]
+        pooled_output = self.encoder(input_ids, attention_mask=att_mask)[1]
 
         if self.hparams.use_freeze:
             pooled_output = pooled_output.detach()
