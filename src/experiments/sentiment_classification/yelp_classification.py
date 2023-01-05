@@ -1,5 +1,4 @@
-from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict
 
 import torch
 import torch.nn as nn
@@ -12,25 +11,9 @@ from torchmetrics.functional.classification import (  # noqa: E501
 
 from src.pretrained_optimus.base_yelp import YelpPreTrainedOptimus
 from src.utils.data.tokens import LabelledTokensBatch
+from src.utils.outputs.classification import ClassifierOutput
 
 
-# TODO: Move to utils
-@dataclass
-class ClassifierOutput:
-    """
-    Args:
-        logits (`torch.FloatTensor` of shape `(batch_size, 1)`):
-            Classification scores before sigmoid.
-        loss (`torch.FloatTensor` of shape `(1,)` when `labels` is provided):
-            Classification loss.
-    """
-
-    logits: torch.FloatTensor
-    loss: Optional[torch.FloatTensor] = None
-
-
-# TODO: Make this a generic parent class SentimentClassifier and make a Yelp
-# child for this with the train_dataloader and val_dataloader implemented.
 class YelpBinarySentimentClassifier(YelpPreTrainedOptimus):
     def __init__(
         self,
