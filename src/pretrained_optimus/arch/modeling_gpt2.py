@@ -32,13 +32,13 @@ logger = logging.getLogger(__name__)
 GPT2_PRETRAINED_MODEL_ARCHIVE_MAP = {
     # TODO: Upload models to S3 and set up bucket for serving
     # Models from https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimius_for_snli.md
-    "gpt2-optimus-cased-snli-beta-1": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-snli-beta-1.bin",  # noqa: E501
+    "gpt2-optimus-cased-latent-768-beta-1.0-dataset-snli": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-snli-beta-1.bin",  # noqa: E501
     # https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimus_finetune_language_models.md
-    "gpt2-optimus-cased-latent-32-beta-0-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-latent-32-beta-0.bin",
+    "gpt2-optimus-cased-latent-32-beta-0.0-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-latent-32-beta-0.bin",
     "gpt2-optimus-cased-latent-32-beta-0.5-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-latent-32-beta-0.5.bin",
-    "gpt2-optimus-cased-latent-768-beta-0-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-latent-768-beta-0.bin",
+    "gpt2-optimus-cased-latent-768-beta-0.0-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-latent-768-beta-0.bin",
     "gpt2-optimus-cased-latent-768-beta-0.5-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-latent-768-beta-0.5.bin",
-    "gpt2-optimus-cased-latent-768-beta-1-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-latent-768-beta-1.bin",
+    "gpt2-optimus-cased-latent-768-beta-1.0-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/gpt2/gpt2-optimus-cased-latent-768-beta-1.bin",
 }
 
 

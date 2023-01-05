@@ -27,13 +27,13 @@ BERT_PRETRAINED_CONFIG_ARCHIVE_MAP = {
     # TODO: Incorporate BioVAE
     # TODO: Upload models to S3 and set up bucket for serving
     # Models from https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimius_for_snli.md
-    "bert-optimus-cased-snli-latent-768-beta-1": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-snli-latent-768-beta-1.json",
+    "bert-optimus-cased-latent-768-beta-1.0-dataset-snli": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-snli-latent-768-beta-1.json",
     # https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimus_finetune_language_models.md
-    "bert-optimus-cased-latent-32-beta-0-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-cased-latent-32-beta-0.json",
+    "bert-optimus-cased-latent-32-beta-0.0-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-cased-latent-32-beta-0.json",
     "bert-optimus-cased-latent-32-beta-0.5-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-cased-latent-32-beta-0.5.json",
-    "bert-optimus-cased-latent-768-beta-0-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-cased-latent-768-beta-0.json",
+    "bert-optimus-cased-latent-768-beta-0.0-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-cased-latent-768-beta-0.json",
     "bert-optimus-cased-latent-768-beta-0.5-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-cased-latent-768-beta-0.5.json",
-    "bert-optimus-cased-latent-768-beta-1-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-cased-latent-768-beta-1.json",
+    "bert-optimus-cased-latent-768-beta-1.0-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-cased-latent-768-beta-1.json",
 }
 
 
@@ -82,6 +82,7 @@ class BertConfig(PretrainedConfig):
         type_vocab_size=2,
         initializer_range=0.02,
         layer_norm_eps=1e-12,
+        latent_size=768,
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -108,6 +109,7 @@ class BertConfig(PretrainedConfig):
             self.type_vocab_size = type_vocab_size
             self.initializer_range = initializer_range
             self.layer_norm_eps = layer_norm_eps
+            self.latent_size = latent_size
         else:
             raise ValueError(
                 "First argument must be either a vocabulary size (int)"

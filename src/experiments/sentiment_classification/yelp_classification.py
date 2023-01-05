@@ -22,8 +22,8 @@ class YelpBinarySentimentClassifier(YelpPreTrainedOptimus):
         # PreTrainedOptimus, FineTunedOptimus, YelpPreTrainedOptimus
         **kwargs,
     ):
-        self.save_hyperparameters()
         super().__init__(**kwargs)
+        self.save_hyperparameters()
 
         for param in self.decoder.parameters():
             param.requires_grad = False

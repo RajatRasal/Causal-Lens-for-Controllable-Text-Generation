@@ -12,10 +12,6 @@ from .base import PreTrainedOptimus
 class FineTunedOptimus(PreTrainedOptimus):
     def __init__(
         self,
-        # PreTrainedOptimus
-        pretrained_latent_dim: int,
-        pretrained_beta: float,
-        pretrained_dataset: str,
         # FineTunedOptimus
         use_beta_schedule: bool = True,
         beta: float = 1.0,
@@ -24,10 +20,10 @@ class FineTunedOptimus(PreTrainedOptimus):
         beta_cycle_ratio_zero: float = 0.25,
         lr: float = 5e-5,
         eps: float = 1e-8,
+        # PreTrainedOptimus
+        **kwargs,
     ):
-        super().__init__(
-            pretrained_latent_dim, pretrained_beta, pretrained_dataset
-        )
+        super().__init__(**kwargs)
         self.save_hyperparameters()
 
         self.beta_cycle = None

@@ -2,7 +2,7 @@ import argparse
 
 from lightning_lite.utilities.seed import seed_everything
 
-from .pretrained_optimus.vae import PreTrainedOptimus
+from src.pretrained_optimus.base import PreTrainedOptimus
 
 
 def analogy(
@@ -25,14 +25,19 @@ def analogy(
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--encoder-model-name",
-        type=str,
-        default="bert-optimus-cased-snli-latent-768-beta-1",
+        "--pretrained-latent-dim",
+        type=int,
+        default=768,
     )
     parser.add_argument(
-        "--decoder-model-name",
+        "--pretrained-beta",
+        type=float,
+        default=1.0,
+    )
+    parser.add_argument(
+        "--pretrained-dataset",
         type=str,
-        default="gpt2-optimus-cased-snli-beta-1",
+        default="snli",
     )
     parser.add_argument("--device", type=str, default="cpu")
     parser.add_argument(
@@ -60,7 +65,9 @@ if __name__ == "__main__":
     seed_everything(args.seed)
 
     optimus = PreTrainedOptimus(
-        args.encoder_model_name, args.decoder_model_name
+        args.pretrained_latent_dim,
+        args.pretrained_beta,
+        args.pretrained_dataset,
     ).eval()
     res = analogy(
         optimus,

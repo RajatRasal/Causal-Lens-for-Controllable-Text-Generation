@@ -7,8 +7,9 @@ if __name__ == "__main__":
     seed_everything(42)
 
     model = YelpPreTrainedOptimus(
-        bert_model_name="bert-optimus-cased-snli-latent-768-beta-1",
-        gpt2_model_name="gpt2-optimus-cased-snli-beta-1",
+        pretrained_latent_dim=768,
+        pretrained_beta=1.0,
+        pretrained_dataset="wiki",
         beta_cycle_len=1,
         max_length=64,
         batch_size=56,
@@ -19,7 +20,7 @@ if __name__ == "__main__":
 
     log_freq = 1000
     trainer = pl.Trainer(
-        max_epochs=1,  # args.max_epochs,
+        max_epochs=1,
         val_check_interval=log_freq,
         log_every_n_steps=log_freq,
         accelerator="gpu",

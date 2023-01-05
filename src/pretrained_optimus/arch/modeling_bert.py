@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 BERT_PRETRAINED_MODEL_ARCHIVE_MAP = {
     # TODO: Upload models to S3 and set up bucket for serving
     # Models from https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimius_for_snli.md
-    "bert-optimus-cased-latent-768-beta-1-dataset-snli": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-snli-latent-768-beta-1.bin",  # noqa: E501
+    "bert-optimus-cased-latent-768-beta-1.0-dataset-snli": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-snli-latent-768-beta-1.bin",  # noqa: E501
     # https://github.com/ChunyuanLI/Optimus/blob/master/doc/optimus_finetune_language_models.md
     "bert-optimus-cased-latent-32-beta-0.0-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-cased-latent-32-beta-0.bin",
     "bert-optimus-cased-latent-32-beta-0.5-dataset-wiki": "https://optimus-pretrained.s3.eu-west-2.amazonaws.com/bert/bert-optimus-cased-latent-32-beta-0.5.bin",
@@ -561,6 +561,7 @@ class BertForLatentConnector(BertPreTrainedModel):
         self.encoder = BertEncoder(config)
         self.pooler = BertPooler(config)
 
+        print(config.latent_size)
         self.linear = nn.Linear(
             config.hidden_size, 2 * config.latent_size, bias=False
         )

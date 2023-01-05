@@ -13,16 +13,6 @@ from .finetune import FineTunedOptimus
 class YelpPreTrainedOptimus(FineTunedOptimus):
     def __init__(
         self,
-        # PreTrainedOptimus
-        pretrained_latent_dim: int,
-        pretrained_beta: float,
-        pretrained_dataset: str,
-        # FineTunedOptimus
-        use_beta_schedule: bool = True,
-        beta: float = 1.0,
-        beta_cycle_len: int = 10,
-        beta_cycle_ratio_increase: float = 0.25,
-        beta_cycle_ratio_zero: float = 0.25,
         # YelpPreTrainedOptimus
         max_length: int = 64,
         batch_size: int = 256,
@@ -30,10 +20,10 @@ class YelpPreTrainedOptimus(FineTunedOptimus):
         train_dataset_size: int = 10000,
         val_dataset_size: int = 1000,
         storage_root: str = "./data",
+        # FineTunedOptimus, PreTrainedOptimus
+        **kwargs
     ):
-        super().__init__(
-            pretrained_latent_dim, pretrained_beta, pretrained_dataset
-        )
+        super().__init__(**kwargs)
         self.save_hyperparameters()
 
         self._ds = {}
