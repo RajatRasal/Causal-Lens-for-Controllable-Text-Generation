@@ -205,10 +205,10 @@ class CARA(nn.Module):
 
         # Generate based on encoded z and gt labels. (reconstruction)
         past_z = latent_z
+        past_gen_z = gen_z
+
         # (B, n_blocks * hidden_size)
-        gen_past_z = gen_z
-        # (B, n_blocks * hidden_size)
-        past = latent_z + label_emb
+        past = past_z + label_emb
 
         outputs = self.decoder(
             input_ids=tgt_seq_ids,
@@ -266,7 +266,7 @@ class CARA(nn.Module):
             # Conditional Generation
             # Generate based on sampled z and sampled labels.
             # (B, n_blocks * hidden_size)
-            cg_past = gen_past_z + past_sampled_label
+            cg_past = past_gen_z + past_sampled_label
             # (B, seq_len)
             cg_generated = self.sample_sequence_conditional_batch(
                 past=cg_past, context=self.bos_token_id_list

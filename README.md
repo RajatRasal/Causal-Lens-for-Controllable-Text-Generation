@@ -63,6 +63,10 @@ tensorboard --logdir lightning_logs/
 
 **Label-conditional text generation** - The goal is to generate text reviews given the positive/negative sentiment. We fine-tune OPTIMUS using the VAE objective on the Yelp reviews polarity dataset, then freeze backbone weights. A conditional GAN is trained on the fixed latent space. The generation process is to first produce a latent vector zy based on a given label y using conditional GAN, then generate sentences conditioned on zy using the decoder.
 
+1. Fine-tune a pretrained model on the Yelp dataset.
+1. Use ARAE to fit a conditional GAN to the fine-tuned latent space.
+1. Generate arbitrary sentences and sentences by style-transfer using the conditional decoder.
+
 ### Low-Resource Language Understanding
 
 The output from the penultimate layer of the BERT Encoder, $h_{\text{[cls]}}$, is fed into an linear classifier $W_C \in \mathbb{R}^{K \times H}$, where $K$ is the number of classes, with objective $-\log(\text{softmax}(h_{\text{[cls]}}W^T_C))$.
