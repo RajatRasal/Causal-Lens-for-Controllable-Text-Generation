@@ -53,6 +53,7 @@ class CARA(nn.Module):
             bias=False,
         )
 
+        # TODO: Implement each network using nn.Sequential().
         # use the same size as latent_z so as to use the same decoder.linear()
         self.label_embedding = nn.Embedding(
             self.label_size, self.nz, padding_idx=0
@@ -76,8 +77,8 @@ class CARA(nn.Module):
             1 if label_size <= 2 else label_size,
         )
 
-        self.CrossEntropyLoss = torch.nn.CrossEntropyLoss()
-        self.BCEWithLogitsLoss = torch.nn.BCEWithLogitsLoss()
+        self.ce_loss = torch.nn.CrossEntropyLoss()
+        self.bce_with_logits_loss = torch.nn.BCEWithLogitsLoss()
 
     def forward(self, input_seq_ids, tgt_seq_ids, cond_labels, attention_mask):
         """
@@ -94,61 +95,62 @@ class CARA(nn.Module):
 
         # Encode inputs
         outputs = self.encoder(input_seq_ids, attention_mask=attention_mask)
-        pooled_hidden_fea = outputs[1]  # (B, dim_h)
+        # (B, dim_h)
+        pooled_hidden_fea = outputs[1]
 
         # Encode z
-        latent_z = self.linear(pooled_hidden_fea)  # (B, nz)
+        # (B, nz)
+        latent_z = self.linear(pooled_hidden_fea)
 
         # Generate z
-        gen_z = self.latent_generator(random_noise)  # (B, nz)
+        # (B, nz)
+        gen_z = self.latent_generator(random_noise)
 
         # ----- Latent discriminator for sampling from a simple distribution
-        prob_encode_z_dis = (
-            self.latent_discriminator(latent_z).squeeze(1).float()
-        )  # (B)
-        prob_gen_z_dis = (
-            self.latent_discriminator(gen_z).squeeze(1).float()
-        )  # (B)
+        # (B,)
+        prob_enc_z_dis = self.latent_discriminator(latent_z).squeeze(1).float()
+        # (B,)
+        prob_gen_z_dis = self.latent_discriminator(gen_z).squeeze(1).float()
         # Train latent discriminator
-        loss_lsd = self.BCEWithLogitsLoss(
-            prob_gen_z_dis, zeros_label
-        ) + self.BCEWithLogitsLoss(prob_encode_z_dis, ones_label)
-        acc_encode_z_dis = (
-            (prob_encode_z_dis >= 0).float() == ones_label
-        ).float()
-        acc_gen_z_dis = ((prob_gen_z_dis >= 0).float() == zeros_label).float()
+        loss_gen = self.bce_with_logits_loss(prob_gen_z_dis, zeros_label)
+        loss_enc = self.bce_with_logits_loss(prob_enc_z_dis, ones_label)
+        loss_lsd = loss_gen + loss_enc
         # Train sampler adversarially
-        loss_lsg = self.BCEWithLogitsLoss(prob_gen_z_dis, ones_label)
+        loss_lsg = self.bce_with_logits_loss(prob_gen_z_dis, ones_label)
+        # Classifier accuracy
+        acc_enc_z_dis = ((prob_enc_z_dis >= 0).float() == ones_label).float()
+        acc_gen_z_dis = ((prob_gen_z_dis >= 0).float() == zeros_label).float()
 
         # ----- Latent classifier for disentanglement
-        prob_encode_z_cls = self.latent_classifier(latent_z)  # (B, n_labels)
+        # (B, n_labels)
+        prob_encode_z_cls = self.latent_classifier(latent_z)
         if self.label_size <= 2:
-            prob_encode_z_cls = prob_encode_z_cls.squeeze(1)  # (B)
+            # (B,)
+            prob_encode_z_cls = prob_encode_z_cls.squeeze(1)
             # Train latent classifier
-            loss_lsc = self.BCEWithLogitsLoss(
+            loss_lsc = self.bce_with_logits_loss(
                 prob_encode_z_cls, cond_labels.float()
             )
             acc_encode_z_cls = (
                 (prob_encode_z_cls >= 0).float() == cond_labels.float()
             ).float()
             # Train encoder adversarially
-            loss_encoder = 1 - self.BCEWithLogitsLoss(
+            loss_encoder = 1 - self.bce_with_logits_loss(
                 prob_encode_z_cls, cond_labels.float()
             )
         else:
             # Train latent classifier
-            loss_lsc = self.CrossEntropyLoss(prob_encode_z_cls, cond_labels)
+            loss_lsc = self.ce_loss(prob_encode_z_cls, cond_labels)
             acc_encode_z_cls = (
                 torch.argmax(prob_encode_z_cls, dim=-1) == cond_labels
             ).float()
             # Train encoder adversarially
-            loss_encoder = 1 - self.CrossEntropyLoss(
-                prob_encode_z_cls, cond_labels
-            )
+            loss_encoder = 1 - self.ce_loss(prob_encode_z_cls, cond_labels)
 
         # ----- Recontruction loss with latent z and label emb
         # Embed labels
-        label_emb = self.label_embedding(cond_labels)  # (B, hidden_size)
+        # (B, hidden_size)
+        label_emb = self.label_embedding(cond_labels)
         if self.label_size <= 2:
             sampled_cond_labels = 1 - cond_labels
         else:
@@ -160,9 +162,10 @@ class CARA(nn.Module):
 
         # Generate based on encoded z and gt labels. (reconstruction)
         past_z = latent_z
-        gen_past_z = gen_z  # (B, n_blocks * hidden_size)
-
-        past = latent_z + label_emb  # (B, n_blocks * hidden_size)
+        # (B, n_blocks * hidden_size)
+        gen_past_z = gen_z
+        # (B, n_blocks * hidden_size)
+        past = latent_z + label_emb
 
         outputs = self.decoder(
             input_ids=tgt_seq_ids,
@@ -176,14 +179,16 @@ class CARA(nn.Module):
         tgt_emb = self.gpt_embeddings(tgt_seq_ids)
         # (B, dim_h, seq_len)
         tgt_encode = self.conv1(tgt_emb.transpose(1, 2))
-        tgt_encode = torch.mean(tgt_encode, dim=-1)  # (B, dim_h)
-        prob_cls = self.classifier(tgt_encode)  # (B, n_labels)
+        # (B, dim_h)
+        tgt_encode = torch.mean(tgt_encode, dim=-1)
+        # (B, n_labels)
+        prob_cls = self.classifier(tgt_encode)
         if self.label_size <= 2:
             prob_cls = prob_cls.squeeze(1)
-            loss_cls = self.BCEWithLogitsLoss(prob_cls, cond_labels.float())
+            loss_cls = self.bce_with_logits_loss(prob_cls, cond_labels.float())
             pred_cls = (prob_cls >= 0).to(dtype=torch.long)
         else:
-            loss_cls = self.CrossEntropyLoss(prob_cls, cond_labels)
+            loss_cls = self.ce_loss(prob_cls, cond_labels)
             pred_cls = torch.argmax(prob_cls, dim=-1)
         acc_cls = (pred_cls == cond_labels).float()
 
@@ -214,16 +219,19 @@ class CARA(nn.Module):
             # Generate based on sampled z and sampled labels.
             # (B, n_blocks * hidden_size)
             cg_past = gen_past_z + past_sampled_label
+            # (B, seq_len)
             cg_generated = self.sample_sequence_conditional_batch(
                 past=cg_past, context=self.bos_token_id_list
-            )  # (B, seq_len)
+            )
 
             # classifier on gt generated sentences.
             ge_emb = self.gpt_embeddings(generated)
             # (B, dim_h, seq_len)
             ge_encode = self.conv1(ge_emb.transpose(1, 2))
-            ge_encode = torch.mean(ge_encode, dim=-1)  # (B, dim_h)
-            prob_ge_cls = self.classifier(ge_encode)  # (B, 1)
+            # (B, dim_h)
+            ge_encode = torch.mean(ge_encode, dim=-1)
+            # (B, 1)
+            prob_ge_cls = self.classifier(ge_encode)
 
             if self.label_size <= 2:
                 pred_ge_cls = (prob_ge_cls.squeeze(1) >= 0).to(torch.long)
@@ -235,8 +243,10 @@ class CARA(nn.Module):
             at_emb = self.gpt_embeddings(at_generated)
             # (B, dim_h, seq_len)
             at_encode = self.conv1(at_emb.transpose(1, 2))
-            at_encode = torch.mean(at_encode, dim=-1)  # (B, dim_h)
-            prob_at_cls = self.classifier(at_encode)  # (B, 1)
+            # (B, dim_h)
+            at_encode = torch.mean(at_encode, dim=-1)
+            # (B, 1)
+            prob_at_cls = self.classifier(at_encode)
             if self.label_size <= 2:
                 pred_at_cls = (prob_at_cls.squeeze(1) >= 0).to(torch.long)
             else:
@@ -247,8 +257,10 @@ class CARA(nn.Module):
             cg_emb = self.gpt_embeddings(cg_generated)
             # (B, dim_h, seq_len)
             cg_encode = self.conv1(cg_emb.transpose(1, 2))
-            cg_encode = torch.mean(cg_encode, dim=-1)  # (B, dim_h)
-            prob_cg_cls = self.classifier(cg_encode)  # (B, 1)
+            # (B, dim_h)
+            cg_encode = torch.mean(cg_encode, dim=-1)
+            # (B, 1)
+            prob_cg_cls = self.classifier(cg_encode)
             if self.label_size <= 2:
                 pred_cg_cls = (prob_cg_cls.squeeze(1) >= 0).to(torch.long)
             else:
@@ -262,7 +274,7 @@ class CARA(nn.Module):
                 "generated": generated,
                 "at_generated": at_generated,
                 "cg_generated": cg_generated,
-                "acc_encode_z_dis": acc_encode_z_dis,
+                "acc_encode_z_dis": acc_enc_z_dis,
                 "acc_gen_z_dis": acc_gen_z_dis,
                 "acc_encode_z_cls": acc_encode_z_cls,
                 "acc_cls": acc_cls,
@@ -287,7 +299,7 @@ class CARA(nn.Module):
             "loss_cls": loss_cls,
         }
         acc_dict = {
-            "acc_encode_z_dis": acc_encode_z_dis,
+            "acc_encode_z_dis": acc_enc_z_dis,
             "acc_gen_z_dis": acc_gen_z_dis,
             "acc_encode_z_cls": acc_encode_z_cls,
             "acc_cls": acc_cls,
@@ -300,7 +312,10 @@ class CARA(nn.Module):
         num_samples = past.size(0)
         context = torch.tensor(context, dtype=torch.long, device=past.device)
         context = context.unsqueeze(0).repeat(num_samples, 1)
-        generated = context  # (B, 1)
+        # (B, 1)
+        generated = context
+
+        decoder_eos_token_id = self.tokenizer_decoder.encode("<EOS>")[0]
 
         while generated.size(-1) < self.block_size:
             inputs = {"input_ids": generated, "past": past}
@@ -311,19 +326,19 @@ class CARA(nn.Module):
             # (B, 1, vocab_size)
             next_tokens_logits = lm_logits[:, -1, :] / self.temperature
             # TODO: Make this function batch compatible
+            # (B, 1, vocab_size)
             filtered_logits = top_k_top_p_filtering(
                 next_tokens_logits, top_k=self.top_k, top_p=self.top_p
-            )  # (B, 1, vocab_size)
+            )
             filtered_logits = F.softmax(filtered_logits, dim=-1)
             # (B, 1)
             next_tokens = torch.multinomial(filtered_logits, num_samples=1)
             # (B, seq_len+1)
             generated = torch.cat((generated, next_tokens), dim=1)
 
-            not_finished = (
-                next_tokens != self.tokenizer_decoder.encode("<EOS>")[0]
-            )
+            not_finished = next_tokens != decoder_eos_token_id
             if torch.sum(not_finished) == 0:
                 break
 
-        return generated  # (B, seq_len)
+        # (B, seq_len)
+        return generated
