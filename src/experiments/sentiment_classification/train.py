@@ -23,7 +23,7 @@ if __name__ == "__main__":
     # TODO: Automate this process using tune.
     # If the train_dataset_size < 10000
     # rerun the training procedure 10 times with different random seeds.
-    # After each run, output the test results.
+    # After each run, get the test results, then agg them together.
     # Else, just run once.
 
     classifier = YelpBinarySentimentClassifier(

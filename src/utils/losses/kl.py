@@ -16,7 +16,7 @@ def kl_divergence(
         kl divergence: (B,)
     """
     if not (0 <= beta <= 1.0):
-        raise Exception("Beta must be between 0 and 1")
+        raise ValueError("Beta must be between 0 and 1")
     loss_kl = 0.5 * (mean.pow(2) + logvar.exp() - logvar - 1)
     if kl_threshold > 0:
         loss_kl *= (loss_kl > kl_threshold).float()

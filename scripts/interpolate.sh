@@ -1,10 +1,12 @@
 #!/bin/bash
 
-MODEL=./lightning_logs/version_8/checkpoints/epoch=0-step=400000.ckpt
+poetry run python -m src.experiments.latent_arithmetic.interpolation \
+    --sent-source "children are looking for the water to be clear." \
+    --sent-target "there are two people playing soccer." \
+    --seed 100
 
-poetry run python \
-    -m src.experiments.guided_language_generation \
-    -f $MODEL \
-    --mode interpolate \
-    -a "children are looking for the water to be clear." \
-    -b "there are two people playing soccer."
+echo
+
+# poetry run python -m src.experiments.latent_arithmetic.interpolation \
+#     --sent-source "a woman is riding a moped on a street with large trees and other riders ride over it as some sort of bob lights are passing behind her." \
+#     --sent-target "two men in blue holding each other standing the window of a one wheel bicycle trying out the tube."

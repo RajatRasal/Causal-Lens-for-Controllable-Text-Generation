@@ -18,6 +18,7 @@ class FineTunedOptimus(PreTrainedOptimus):
         beta_cycle_len: int = 10,
         beta_cycle_ratio_increase: float = 0.25,
         beta_cycle_ratio_zero: float = 0.25,
+        kl_threshold: float = 1.0,
         lr: float = 5e-5,
         eps: float = 1e-8,
         # PreTrainedOptimus
@@ -52,31 +53,54 @@ class FineTunedOptimus(PreTrainedOptimus):
         self.log_dict({f"{split}/{k}": v.item() for k, v in metrics.items()})
 
     def _step(
-        self, enc_tokens: torch.FloatTensor, dec_tokens: torch.FloatTensor
+        self,
+        enc_tokens: torch.FloatTensor,
+        dec_tokens: torch.FloatTensor,
+        enc_tokens_batch_lengths: torch.FloatTensor,
     ) -> Dict[str, torch.FloatTensor]:
+        # Encoding text tokens
         z, mean, logvar = self.encode(enc_tokens)
+
+        # Beta annealing
         beta = (
             self.hparams.beta
             if self.hparams.use_beta_schedule
             else self._beta_from_schedule()
         )
-        kl_loss = kl_divergence(mean, logvar, beta)
+
+        # Loss calculation
+        kl_loss = kl_divergence(mean, logvar, beta, self.hparams.kl_threshold)
         recon_loss = self.decode(z, dec_tokens)[0]
-        loss = recon_loss + kl_loss
+
+        # Scaling reconstruction loss by sentence length
+        if self.hparams.length_weighted:
+            recon_loss_weighted = recon_loss / enc_tokens_batch_lengths
+        else:
+            recon_loss_weighted = recon_loss
+        loss = recon_loss_weighted + kl_loss
+
         return {
             "loss": loss.mean(),
-            "mean_recon_loss": recon_loss.mean(),
-            "mean_kl_loss": kl_loss.mean(),
+            "recon_loss": recon_loss_weighted.mean(),
+            "kl_loss": kl_loss.mean(),
         }
 
     def training_step(
         self, batch: TokensBatch, batch_idx: int
     ) -> torch.FloatTensor:
-        metrics = self._step(batch.enc_tokens_batch, batch.dec_tokens_batch)
+        metrics = self._step(
+            batch.enc_tokens_batch,
+            batch.dec_tokens_batch,
+            torch.tensor(batch.enc_tokens_batch_lengths),
+        )
         self._log_metrics(metrics, "train")
         return metrics
 
     def validation_step(self, batch: TokensBatch, batch_idx: int):
-        metrics = self._step(batch.enc_tokens_batch, batch.dec_tokens_batch)
+        metrics = self._step(
+            batch.enc_tokens_batch,
+            batch.dec_tokens_batch,
+            torch.tensor(batch.enc_tokens_batch_lengths),
+        )
         self._log_metrics(metrics, "val")
         return metrics
