@@ -1,8 +1,11 @@
+from typing import Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from src.utils.decoder.top_k_top_p_filtering import top_k_top_p_filtering
+from src.utils.transforms.layers import MeanLayer, TransposeLayer
 
 
 class CARA(nn.Module):
@@ -64,21 +67,57 @@ class CARA(nn.Module):
         )
         self.latent_discriminator = nn.Linear(self.nz, 1)
 
-        self.gpt_embeddings = nn.Embedding(
-            self.decoder.config.vocab_size, self.decoder.config.n_embd
+        self.classifier = nn.Sequential(
+            nn.Embedding(
+                self.decoder.config.vocab_size,
+                self.decoder.config.n_embd,
+            ),
+            # output: (B, dim_h, seq_len)
+            TransposeLayer(dim0=1, dim1=2),
+            nn.Conv1d(
+                self.encoder.config.hidden_size,
+                self.encoder.config.hidden_size,
+                kernel_size=3,
+            ),
+            # output: (B, dim_h)
+            MeanLayer(dim=-1),
+            # output: (B, n_labels)
+            nn.Linear(
+                self.encoder.config.hidden_size,
+                1 if label_size <= 2 else label_size,
+            ),
         )
-        self.gpt_embeddings.weight.data = decoder.transformer.wte.weight.data
+        self.classifier[0].weight.data = decoder.transformer.wte.weight.data
 
-        self.conv1 = nn.Conv1d(
-            self.encoder.config.hidden_size, self.encoder.config.hidden_size, 3
-        )
-        self.classifier = nn.Linear(
-            self.encoder.config.hidden_size,
-            1 if label_size <= 2 else label_size,
-        )
+        # self.gpt_embeddings = nn.Embedding(
+        #     self.decoder.config.vocab_size, self.decoder.config.n_embd
+        # )
+        # self.gpt_embeddings.weight.data = decoder.transformer.wte.weight.data
+
+        # self.conv1 = nn.Conv1d(
+        #     self.encoder.config.hidden_size,
+        #   self.encoder.config.hidden_size, 3
+        # )
+        # self.classifier = nn.Linear(
+        #     self.encoder.config.hidden_size,
+        #     1 if label_size <= 2 else label_size,
+        # )
 
         self.ce_loss = torch.nn.CrossEntropyLoss()
         self.bce_with_logits_loss = torch.nn.BCEWithLogitsLoss()
+
+    def _pred_and_acc(
+        self, pred_logits, true_labels
+    ) -> Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor]:
+        if self.label_size <= 2:
+            pred_logits = pred_logits.squeeze(1)
+            pred = (pred_logits >= 0).to(torch.long)
+            loss = self.bce_with_logits_loss(pred_logits, true_labels.float())
+        else:
+            pred = torch.argmax(pred_logits, dim=-1)
+            loss = self.ce_loss(pred_logits, true_labels)
+        acc = (pred == true_labels).float()
+        return pred, acc, loss
 
     def forward(self, input_seq_ids, tgt_seq_ids, cond_labels, attention_mask):
         """
@@ -123,29 +162,33 @@ class CARA(nn.Module):
 
         # ----- Latent classifier for disentanglement
         # (B, n_labels)
-        prob_encode_z_cls = self.latent_classifier(latent_z)
-        if self.label_size <= 2:
-            # (B,)
-            prob_encode_z_cls = prob_encode_z_cls.squeeze(1)
-            # Train latent classifier
-            loss_lsc = self.bce_with_logits_loss(
-                prob_encode_z_cls, cond_labels.float()
-            )
-            acc_encode_z_cls = (
-                (prob_encode_z_cls >= 0).float() == cond_labels.float()
-            ).float()
-            # Train encoder adversarially
-            loss_encoder = 1 - self.bce_with_logits_loss(
-                prob_encode_z_cls, cond_labels.float()
-            )
-        else:
-            # Train latent classifier
-            loss_lsc = self.ce_loss(prob_encode_z_cls, cond_labels)
-            acc_encode_z_cls = (
-                torch.argmax(prob_encode_z_cls, dim=-1) == cond_labels
-            ).float()
-            # Train encoder adversarially
-            loss_encoder = 1 - self.ce_loss(prob_encode_z_cls, cond_labels)
+        prob_enc_z_cls = self.latent_classifier(latent_z)
+        _, acc_encode_z_cls, loss_lsc = self._pred_and_acc(
+            prob_enc_z_cls, cond_labels
+        )
+        loss_enc = 1 - loss_lsc
+        # if self.label_size <= 2:
+        #     # (B,)
+        #     prob_enc_z_cls = prob_enc_z_cls.squeeze(1)
+        #     # Train latent classifier
+        #     loss_lsc = self.bce_with_logits_loss(
+        #         prob_enc_z_cls, cond_labels.float()
+        #     )
+        #     acc_encode_z_cls = (
+        #         (prob_enc_z_cls >= 0).float() == cond_labels.float()
+        #     ).float()
+        #     # Train encoder adversarially
+        #     loss_encoder = 1 - self.bce_with_logits_loss(
+        #         prob_enc_z_cls, cond_labels.float()
+        #     )
+        # else:
+        #     # Train latent classifier
+        #     loss_lsc = self.ce_loss(prob_enc_z_cls, cond_labels)
+        #     acc_encode_z_cls = (
+        #         torch.argmax(prob_enc_z_cls, dim=-1) == cond_labels
+        #     ).float()
+        #     # Train encoder adversarially
+        #     loss_encoder = 1 - self.ce_loss(prob_enc_z_cls, cond_labels)
 
         # ----- Recontruction loss with latent z and label emb
         # Embed labels
@@ -176,28 +219,33 @@ class CARA(nn.Module):
         loss_rec = outputs[0]
 
         # ----- Train a classifier in the observation space
-        tgt_emb = self.gpt_embeddings(tgt_seq_ids)
-        # (B, dim_h, seq_len)
-        tgt_encode = self.conv1(tgt_emb.transpose(1, 2))
-        # (B, dim_h)
-        tgt_encode = torch.mean(tgt_encode, dim=-1)
-        # (B, n_labels)
-        prob_cls = self.classifier(tgt_encode)
-        if self.label_size <= 2:
-            prob_cls = prob_cls.squeeze(1)
-            loss_cls = self.bce_with_logits_loss(prob_cls, cond_labels.float())
-            pred_cls = (prob_cls >= 0).to(dtype=torch.long)
-        else:
-            loss_cls = self.ce_loss(prob_cls, cond_labels)
-            pred_cls = torch.argmax(prob_cls, dim=-1)
-        acc_cls = (pred_cls == cond_labels).float()
+        # tgt_emb = self.gpt_embeddings(tgt_seq_ids)
+        # # (B, dim_h, seq_len)
+        # tgt_encode = self.conv1(tgt_emb.transpose(1, 2))
+        # # (B, dim_h)
+        # tgt_encode = torch.mean(tgt_encode, dim=-1)
+        # # (B, n_labels)
+        # prob_cls = self.classifier(tgt_encode)
+
+        # input: (B, seq_len), output: (B, n_labels)
+        logits_cls = self.classifier(tgt_seq_ids)
+        pred_cls, acc_cls, loss_cls = self._pred_and_acc(
+            logits_cls, cond_labels
+        )
+
+        # if self.label_size <= 2:
+        #     prob_cls = prob_cls.squeeze(1)
+        #     loss_cls = self.bce_with_logits_loss(prob_cls,
+        #               cond_labels.float())
+        #     pred_cls = (prob_cls >= 0).to(dtype=torch.long)
+        # else:
+        #     loss_cls = self.ce_loss(prob_cls, cond_labels)
+        #     pred_cls = torch.argmax(prob_cls, dim=-1)
+        # acc_cls = (pred_cls == cond_labels).float()
 
         # Loss
-        loss_latent_space = (
-            (loss_encoder + loss_lsc)
-            + (loss_lsd + loss_lsg)
-            + self.beta_cls * loss_cls
-        )
+        loss_latent_space = (loss_enc + loss_lsc) + (loss_lsd + loss_lsg)
+        loss_latent_space += self.beta_cls * loss_cls
         loss = loss_rec + self.latent_scale_factor * loss_latent_space
 
         if not self.training:
@@ -224,48 +272,59 @@ class CARA(nn.Module):
                 past=cg_past, context=self.bos_token_id_list
             )
 
-            # classifier on gt generated sentences.
-            ge_emb = self.gpt_embeddings(generated)
-            # (B, dim_h, seq_len)
-            ge_encode = self.conv1(ge_emb.transpose(1, 2))
-            # (B, dim_h)
-            ge_encode = torch.mean(ge_encode, dim=-1)
-            # (B, 1)
-            prob_ge_cls = self.classifier(ge_encode)
+            # # classifier on gt generated sentences.
+            # ge_emb = self.gpt_embeddings(generated)
+            # # (B, dim_h, seq_len)
+            # ge_encode = self.conv1(ge_emb.transpose(1, 2))
+            # # (B, dim_h)
+            # ge_encode = torch.mean(ge_encode, dim=-1)
+            # # (B, 1)
+            # prob_ge_cls = self.classifier(ge_encode)
+            prob_ge_logits = self.classifier(generated)
+            pred_ge_cls, acc_ge_cls, _ = self._pred_and_acc(
+                prob_ge_logits, cond_labels
+            )
+            # if self.label_size <= 2:
+            #     pred_ge_cls = (prob_ge_cls.squeeze(1) >= 0).to(torch.long)
+            # else:
+            #     pred_ge_cls = torch.argmax(prob_ge_cls, dim=-1)
+            # acc_ge_cls = (pred_ge_cls == cond_labels).float()
 
-            if self.label_size <= 2:
-                pred_ge_cls = (prob_ge_cls.squeeze(1) >= 0).to(torch.long)
-            else:
-                pred_ge_cls = torch.argmax(prob_ge_cls, dim=-1)
-            acc_ge_cls = (pred_ge_cls == cond_labels).float()
+            # # classifier on attribute transfer generated sentences.
+            # at_emb = self.gpt_embeddings(at_generated)
+            # # (B, dim_h, seq_len)
+            # at_encode = self.conv1(at_emb.transpose(1, 2))
+            # # (B, dim_h)
+            # at_encode = torch.mean(at_encode, dim=-1)
+            # # (B, 1)
+            # prob_at_cls = self.classifier(at_encode)
+            prob_at_logits = self.classifier(at_generated)
+            pred_at_cls, acc_at_cls, _ = self._pred_and_acc(
+                prob_at_logits, sampled_cond_labels
+            )
+            # if self.label_size <= 2:
+            #     pred_at_cls = (prob_at_cls.squeeze(1) >= 0).to(torch.long)
+            # else:
+            #     pred_at_cls = torch.argmax(prob_at_cls, dim=-1)
+            # acc_at_cls = (pred_at_cls == sampled_cond_labels).float()
 
-            # classifier on attribute transfer generated sentences.
-            at_emb = self.gpt_embeddings(at_generated)
-            # (B, dim_h, seq_len)
-            at_encode = self.conv1(at_emb.transpose(1, 2))
-            # (B, dim_h)
-            at_encode = torch.mean(at_encode, dim=-1)
-            # (B, 1)
-            prob_at_cls = self.classifier(at_encode)
-            if self.label_size <= 2:
-                pred_at_cls = (prob_at_cls.squeeze(1) >= 0).to(torch.long)
-            else:
-                pred_at_cls = torch.argmax(prob_at_cls, dim=-1)
-            acc_at_cls = (pred_at_cls == sampled_cond_labels).float()
-
-            # classifier on conditional generated sentences.
-            cg_emb = self.gpt_embeddings(cg_generated)
-            # (B, dim_h, seq_len)
-            cg_encode = self.conv1(cg_emb.transpose(1, 2))
-            # (B, dim_h)
-            cg_encode = torch.mean(cg_encode, dim=-1)
-            # (B, 1)
-            prob_cg_cls = self.classifier(cg_encode)
-            if self.label_size <= 2:
-                pred_cg_cls = (prob_cg_cls.squeeze(1) >= 0).to(torch.long)
-            else:
-                pred_cg_cls = torch.argmax(prob_cg_cls, dim=-1)
-            acc_cg_cls = (pred_cg_cls == sampled_cond_labels).float()
+            # # classifier on conditional generated sentences.
+            # cg_emb = self.gpt_embeddings(cg_generated)
+            # # (B, dim_h, seq_len)
+            # cg_encode = self.conv1(cg_emb.transpose(1, 2))
+            # # (B, dim_h)
+            # cg_encode = torch.mean(cg_encode, dim=-1)
+            # # (B, 1)
+            # prob_cg_cls = self.classifier(cg_encode)
+            prob_cg_logits = self.classifier(cg_generated)
+            pred_cg_cls, acc_cg_cls, _ = self._pred_and_acc(
+                prob_cg_logits, sampled_cond_labels
+            )
+            # if self.label_size <= 2:
+            #     pred_cg_cls = (prob_cg_cls.squeeze(1) >= 0).to(torch.long)
+            # else:
+            #     pred_cg_cls = torch.argmax(prob_cg_cls, dim=-1)
+            # acc_cg_cls = (pred_cg_cls == sampled_cond_labels).float()
 
             result = {
                 "sampled_cond_labels": sampled_cond_labels,
@@ -292,7 +351,7 @@ class CARA(nn.Module):
         loss_dict = {
             "loss": loss,
             "loss_rec": loss_rec,
-            "loss_encoder": loss_encoder,
+            "loss_encoder": loss_enc,
             "loss_lsc": loss_lsc,
             "loss_lsd": loss_lsd,
             "loss_lsg": loss_lsg,
@@ -333,7 +392,7 @@ class CARA(nn.Module):
             filtered_logits = F.softmax(filtered_logits, dim=-1)
             # (B, 1)
             next_tokens = torch.multinomial(filtered_logits, num_samples=1)
-            # (B, seq_len+1)
+            # (B, seq_len + 1)
             generated = torch.cat((generated, next_tokens), dim=1)
 
             not_finished = next_tokens != decoder_eos_token_id
