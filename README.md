@@ -54,9 +54,9 @@ tensorboard --logdir lightning_logs/
 ```
 poetry run python3 -m src.experiments.finetune.yelp
 ```
-1. Use ARAE to fit a conditional GAN to the fine-tuned latent space. (Approx 1 day on P3.xlarge.)
+1. Use ARAE to fit a conditional GAN to the fine-tuned latent space. (Approx 2 days on P3.xlarge - 30mins per epoch.)
 ```
-poetry run python3 -m src.experiments.conditional_text_generation.train --checkpoint-path XXX --max-length 20 --log-freq 1000 --epochs 100 --batch-size 175
+poetry run python3 -m src.experiments.conditional_text_generation.train --checkpoint-path XXX --max-length 20 --log-freq 1000 --epochs 100 --batch-size 180
 ```
 1. Generate arbitrary sentences and sentences by style-transfer using the conditional decoder.
 ```
