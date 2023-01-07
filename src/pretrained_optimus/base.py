@@ -113,11 +113,7 @@ class PreTrainedOptimus(pl.LightningModule):
         assert len(z.size()) == 2 and z.size()[0] == 1
         generated = self.CONTEXT_TOKEN.to(self.device)
         next_token_id = None
-        count = 0
-        while (
-            next_token_id != self.tokeniser_decoder.eos_token_id
-            and count != max_length
-        ):
+        while next_token_id != self.tokeniser_decoder.eos_token_id:
             outputs = self.decoder(input_ids=generated, past=z)[0]
             next_token_logits = outputs[0, -1, :] / temperature
             filtered_logits = top_k_top_p_filtering(
@@ -128,7 +124,6 @@ class PreTrainedOptimus(pl.LightningModule):
             )
             generated = torch.cat((generated, next_token.unsqueeze(0)), dim=1)
             next_token_id = next_token.unsqueeze(0)[0, 0].item()
-            count += 1
         return generated
 
     def sample_decode(

@@ -21,19 +21,6 @@ An implementation of the paper "Causal Lens for Controllable Text Generation" by
 python3 -c "import torch; print(torch.cuda.device_count())"
 ```
 
-## Data
-
-The Wikipedia-2 dataset, from GPT-2 paper, has been pre-processed such that each sentence has a maximum length of 64 or the tokenized sentence length is smaller than 256.
-
-```
-wget -O data/wikipedia_json_64_filtered.zip https://chunylcus.blob.core.windows.net/machines/msrdl/optimus/data/datasets/wikipedia_json_64_filtered.zip
-```
-
-The full dataset can also be downloaded.
-```
-wget -O data/wikipedia.segmented.nltk.txt https://chunylcus.blob.core.windows.net/machines/msrdl/optimus/data/datasets/wikipedia.segmented.nltk.txt
-```
-
 ## Available Pretrained Optimus Models
 #### TODO: List of Optimus models available goes here
 
@@ -63,9 +50,20 @@ tensorboard --logdir lightning_logs/
 
 **Label-conditional text generation** - The goal is to generate text reviews given the positive/negative sentiment. We fine-tune OPTIMUS using the VAE objective on the Yelp reviews polarity dataset, then freeze backbone weights. A conditional GAN is trained on the fixed latent space. The generation process is to first produce a latent vector zy based on a given label y using conditional GAN, then generate sentences conditioned on zy using the decoder.
 
-1. Fine-tune a pretrained model on the Yelp dataset.
-1. Use ARAE to fit a conditional GAN to the fine-tuned latent space.
+1. Fine-tune a pretrained model on the Yelp dataset. (Approx 1.5hrs on P3.xlarge.)
+```
+poetry run python3 -m src.experiments.finetune.yelp
+```
+1. Use ARAE to fit a conditional GAN to the fine-tuned latent space. (Approx 1 day on P3.xlarge.)
+```
+poetry run python3 -m src.experiments.conditional_text_generation.train --checkpoint-path XXX --max-length 20 --log-freq 1000 --epochs 100 --batch-size 175
+```
 1. Generate arbitrary sentences and sentences by style-transfer using the conditional decoder.
+```
+poetry run python3 -m src.experiments.conditional_text_generation.test_from_z --checkpoint-path XXX
+```
+
+#### TODO: Store logs to S3 using default_log_dir
 
 ### Low-Resource Language Understanding
 

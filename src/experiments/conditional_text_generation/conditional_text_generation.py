@@ -41,7 +41,7 @@ class YelpConditionalSentenceGenerator(YelpPreTrainedOptimus):
         loss_dict, acc_dict = self.cara(
             batch.tokens_batch.enc_tokens_batch,
             batch.tokens_batch.dec_tokens_batch,
-            batch.labels,
+            torch.tensor(batch.labels, device=self.device).long(),
             attention_mask,
         )
         loss_dict["loss"] = loss_dict["loss"].mean()
@@ -61,7 +61,7 @@ class YelpConditionalSentenceGenerator(YelpPreTrainedOptimus):
         result = self.cara(
             batch.tokens_batch.enc_tokens_batch,
             batch.tokens_batch.dec_tokens_batch,
-            batch.labels,
+            torch.tensor(batch.labels, device=self.device).long(),
             attention_mask,
         )
         if batch_idx == 0:

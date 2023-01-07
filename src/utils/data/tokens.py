@@ -72,7 +72,7 @@ def collate_labelled_tokens(
 
     return LabelledTokensBatch(
         tokens_batch=collate_tokens(tokens),
-        labels=torch.tensor(labels, dtype=torch.long),
+        labels=labels,
     )
 
 

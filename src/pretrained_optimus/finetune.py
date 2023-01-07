@@ -21,6 +21,7 @@ class FineTunedOptimus(PreTrainedOptimus):
         kl_threshold: float = 1.0,
         lr: float = 5e-5,
         eps: float = 1e-8,
+        length_weighted: bool = True,
         # PreTrainedOptimus
         **kwargs,
     ):
@@ -91,7 +92,7 @@ class FineTunedOptimus(PreTrainedOptimus):
         metrics = self._step(
             batch.enc_tokens_batch,
             batch.dec_tokens_batch,
-            torch.tensor(batch.enc_tokens_batch_lengths),
+            torch.tensor(batch.enc_tokens_batch_lengths, device=self.device),
         )
         self._log_metrics(metrics, "train")
         return metrics
@@ -100,7 +101,7 @@ class FineTunedOptimus(PreTrainedOptimus):
         metrics = self._step(
             batch.enc_tokens_batch,
             batch.dec_tokens_batch,
-            torch.tensor(batch.enc_tokens_batch_lengths),
+            torch.tensor(batch.enc_tokens_batch_lengths, device=self.device),
         )
         self._log_metrics(metrics, "val")
         return metrics

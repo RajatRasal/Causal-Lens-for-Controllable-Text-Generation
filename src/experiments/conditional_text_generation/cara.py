@@ -5,7 +5,33 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from src.utils.decoder.top_k_top_p_filtering import top_k_top_p_filtering
-from src.utils.transforms.layers import MeanLayer, TransposeLayer
+
+
+class TextClassifier(nn.Module):
+    def __init__(self, vocab_size: int, embed_size: int, n_labels: int = 2):
+        super().__init__()
+        self.gpt_embeddings = nn.Embedding(vocab_size, embed_size)
+        self.conv1 = nn.Conv1d(embed_size, embed_size, kernel_size=3)
+        self.classifier = nn.Linear(
+            embed_size,
+            1 if n_labels <= 2 else n_labels,
+        )
+
+    def forward(self, seq_ids: torch.FloatTensor) -> torch.FloatTensor:
+        """
+        Input:
+            seq_ids: (B, seq_len)
+        Output:
+            prob_cls: (B, n_labels)
+        """
+        emb = self.gpt_embeddings(seq_ids)
+        # (B, dim_h, seq_len)
+        enc = self.conv1(emb.transpose(1, 2))
+        # (B, dim_h)
+        enc_mean = torch.mean(enc, dim=-1)
+        # (B, n_labels)
+        prob_cls = self.classifier(enc_mean)
+        return prob_cls
 
 
 class CARA(nn.Module):
@@ -67,27 +93,33 @@ class CARA(nn.Module):
         )
         self.latent_discriminator = nn.Linear(self.nz, 1)
 
-        self.classifier = nn.Sequential(
-            nn.Embedding(
-                self.decoder.config.vocab_size,
-                self.decoder.config.n_embd,
-            ),
-            # output: (B, dim_h, seq_len)
-            TransposeLayer(dim0=1, dim1=2),
-            nn.Conv1d(
-                self.encoder.config.hidden_size,
-                self.encoder.config.hidden_size,
-                kernel_size=3,
-            ),
-            # output: (B, dim_h)
-            MeanLayer(dim=-1),
-            # output: (B, n_labels)
-            nn.Linear(
-                self.encoder.config.hidden_size,
-                1 if label_size <= 2 else label_size,
-            ),
+        assert self.decoder.config.n_embd == self.encoder.config.hidden_size
+        self.classifier = TextClassifier(
+            decoder.config.vocab_size, decoder.config.n_embd, self.label_size
         )
-        self.classifier[0].weight.data = decoder.transformer.wte.weight.data
+        self.classifier.gpt_embeddings.weight.data = (
+            decoder.transformer.wte.weight.data
+        )
+        # nn.Sequential(
+        #     nn.Embedding(
+        #         self.decoder.config.vocab_size,
+        #         self.decoder.config.n_embd,
+        #     ),
+        #     # output: (B, dim_h, seq_len)
+        #     TransposeLayer(dim0=1, dim1=2),
+        #     nn.Conv1d(
+        #         self.encoder.config.hidden_size,
+        #         self.encoder.config.hidden_size,
+        #         kernel_size=3,
+        #     ),
+        #     # output: (B, dim_h)
+        #     MeanLayer(dim=-1),
+        #     # output: (B, n_labels)
+        #     nn.Linear(
+        #         self.encoder.config.hidden_size,
+        #         1 if label_size <= 2 else label_size,
+        #     ),
+        # )
 
         # self.gpt_embeddings = nn.Embedding(
         #     self.decoder.config.vocab_size, self.decoder.config.n_embd

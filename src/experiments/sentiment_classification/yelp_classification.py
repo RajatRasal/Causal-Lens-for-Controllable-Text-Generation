@@ -63,19 +63,25 @@ class YelpBinarySentimentClassifier(YelpPreTrainedOptimus):
         self, batch: LabelledTokensBatch, batch_idx: int
     ) -> Dict[str, torch.Tensor]:
         return self._step(
-            batch.tokens_batch.enc_tokens_batch, batch.labels, "train"
+            batch.tokens_batch.enc_tokens_batch,
+            torch.LongTensor(batch.labels, device=self.device),
+            step_name="train",
         )
 
     def validation_step(
         self, batch: LabelledTokensBatch, batch_idx: int
     ) -> Dict[str, torch.Tensor]:
         return self._step(
-            batch.tokens_batch.enc_tokens_batch, batch.labels, "val"
+            batch.tokens_batch.enc_tokens_batch,
+            torch.LongTensor(batch.labels, device=self.device),
+            step_name="val",
         )
 
     def test_step(self, batch, batch_idx):
         return self._step(
-            batch.tokens_batch.enc_tokens_batch, batch.labels, "test"
+            batch.tokens_batch.enc_tokens_batch,
+            torch.LongTensor(batch.labels, device=self.device),
+            step_name="test",
         )
 
     def configure_optimizers(self):

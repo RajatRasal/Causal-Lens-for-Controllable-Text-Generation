@@ -12,13 +12,13 @@ if __name__ == "__main__":
         pretrained_dataset="wiki",
         beta_cycle_len=1,
         max_length=64,
-        batch_size=56,
-        train_prop=0.9,
-        train_dataset_size=450000,
+        batch_size=60,
+        train_prop=0.95,
+        train_dataset_size=500000,
         val_dataset_size=1000,
     )
 
-    log_freq = 1000
+    log_freq = 500
     trainer = pl.Trainer(
         max_epochs=1,
         val_check_interval=log_freq,
@@ -26,5 +26,6 @@ if __name__ == "__main__":
         accelerator="gpu",
         devices=[0],
         default_root_dir="./lightning_logs_finetune",
+        save_last=True,
     )
     trainer.fit(model)

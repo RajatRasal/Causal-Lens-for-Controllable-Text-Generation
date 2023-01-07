@@ -8,6 +8,7 @@ from .conditional_text_generation import YelpConditionalSentenceGenerator
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--checkpoint-path", type=str)
     parser.add_argument("--max-length", type=int, default=15)
     parser.add_argument("--batch-size", type=int, default=128)
     parser.add_argument("--epochs", type=int, default=10)
@@ -16,9 +17,8 @@ if __name__ == "__main__":
 
     seed_everything(args.seed)
 
-    # TODO: Max length = 15
     model = YelpConditionalSentenceGenerator.load_from_checkpoint(
-        checkpoint_path="/home/ubuntu/Causal-Lens-for-Controllable-Text-Generation/lightning_logs_finetune/lightning_logs/version_21/checkpoints/epoch=0-step=8000.ckpt",  # noqa: E501
+        checkpoint_path=args.checkpoint_path,
         strict=False,
         max_length=args.max_length,
         batch_size=args.batch_size,
@@ -31,6 +31,6 @@ if __name__ == "__main__":
         log_every_n_steps=args.log_freq,
         accelerator="gpu",
         devices=[0],
-        default_root_dir="./lightning_logs_generate2",
+        default_root_dir="./lightning_logs_generate_default_base_model",
     )
     trainer.fit(model)
