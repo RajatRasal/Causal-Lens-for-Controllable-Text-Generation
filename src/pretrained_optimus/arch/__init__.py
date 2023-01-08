@@ -16,4 +16,4 @@ from .file_utils import (
 
 # Modelling
 from .modeling_bert import BERT_PRETRAINED_MODEL_ARCHIVE_MAP, BertForLatentConnector
-from .modeling_gpt2 import GPT2_PRETRAINED_MODEL_ARCHIVE_MAP, GPT2ForLatentConnector
+from .modeling_gpt2 import GPT2_PRETRAINED_MODEL_ARCHIVE_MAP, GPT2ForLatentConnector, GPT2Encoder

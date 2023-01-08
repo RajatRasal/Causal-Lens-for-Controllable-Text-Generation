@@ -706,3 +706,55 @@ class GPT2ForLatentConnector(GPT2PreTrainedModel):
 
         # (loss), lm_logits, presents, (all hidden_states), (attentions)
         return outputs
+
+
+class GPT2Encoder(GPT2PreTrainedModel):
+    r"""
+    """
+    def __init__(self, config, latent_size):
+        super().__init__(config)
+        self.transformer = GPT2Model(config)
+
+        self.linear = nn.Linear(config.hidden_size, 2 * latent_size, bias=False)  # TODO(hzt): to align with BERTForLatentConnector
+
+        self.init_weights()
+
+    def forward(self,
+                input_ids,
+                past=None,
+                attention_mask=None,
+                token_type_ids=None,
+                position_ids=None,
+                head_mask=None,
+                inputs_embeds=None,
+                end_token_id_or_embeds=None):
+
+        transformer_outputs = self.transformer(input_ids=input_ids,
+                                               past=past,
+                                               attention_mask=attention_mask,
+                                               token_type_ids=token_type_ids,
+                                               position_ids=position_ids,
+                                               head_mask=head_mask,
+                                               inputs_embeds=inputs_embeds)
+
+        hidden_states = transformer_outputs[0]
+
+        if input_ids is not None:
+            batch_size, sequence_length = input_ids.shape[:2]
+        else:
+            batch_size, sequence_length = inputs_embeds.shape[:2]
+
+        if end_token_id_or_embeds is None:
+            sequence_lengths = -1
+        else:
+            if input_ids is not None:
+                sequence_lengths = torch.ne(input_ids, end_token_id_or_embeds).sum(-1) - 1
+            else:  # inputs_embeds is not None
+                assert end_token_id_or_embeds.dim() == 1
+                embed_dim = end_token_id_or_embeds.shape[-1]
+                elemwise_ind = (inputs_embeds == end_token_id_or_embeds).sum(-1)
+                sequence_lengths = torch.ne(elemwise_ind, embed_dim).sum(-1) - 1
+
+        pooled_logits = hidden_states[range(batch_size), sequence_lengths]
+
+        return pooled_logits
