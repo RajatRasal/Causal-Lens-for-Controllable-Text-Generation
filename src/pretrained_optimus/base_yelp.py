@@ -5,7 +5,10 @@ import torch
 from torch.utils.data import DataLoader, SubsetRandomSampler
 
 from src.utils.data.tokens import LabelledTokensBatch, collate_labelled_tokens
-from src.utils.data.yelp_dataset import TokenisedSentencesYelpReviewPolarity
+from src.utils.data.yelp_dataset import (
+    TokenisedSentencesYelpReviewPolarity,
+    TokenisedSentencesYelpReviewPolarityWithCategories,
+)
 
 from .finetune import FineTunedOptimus
 
@@ -99,3 +102,24 @@ class YelpPreTrainedOptimus(FineTunedOptimus):
         self, batch: LabelledTokensBatch, batch_idx: int
     ) -> None:
         super().validation_step(batch.tokens_batch, batch_idx)
+
+
+class YelpWithCategoriesPreTrainedOptimus(YelpPreTrainedOptimus):
+    def __init__(*args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def _dataset(
+        self, split: str
+    ) -> TokenisedSentencesYelpReviewPolarityWithCategories:
+        if split in self._ds:
+            return self._ds[split]
+
+        ds = TokenisedSentencesYelpReviewPolarityWithCategories(
+            tokeniser_encoder=self.tokeniser_encoder,
+            tokeniser_decoder=self.tokeniser_decoder,
+            split=split,
+            root=self.hparams.storage_root,
+            max_length=self.hparams.max_length,
+        )
+        self._ds[split] = ds
+        return ds

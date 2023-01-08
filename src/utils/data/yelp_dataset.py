@@ -82,3 +82,7 @@ class TokenisedSentencesYelpReviewPolarity(Dataset):
             return token
         else:
             return self._cache[idx]
+
+
+class TokenisedSentencesYelpReviewPolarityWithCategories(Dataset):
+    pass
