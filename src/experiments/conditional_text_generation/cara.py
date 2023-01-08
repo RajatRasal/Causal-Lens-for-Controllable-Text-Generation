@@ -182,6 +182,7 @@ class CARA(nn.Module):
         past_sampled_label = sampled_label_emb
 
         # Generate based on encoded z and gt labels. (reconstruction)
+        # Rename variables for clarity
         past_z = latent_z
         past_gen_z = gen_z
 
@@ -290,6 +291,7 @@ class CARA(nn.Module):
         return loss_dict, acc_dict
 
     def sample_sequence_conditional_batch(self, past, context):
+        # TODO: Use the same method from utils/
         # context: a single id of <BOS>
         # past: (B, past_seq_len dim_h)
         num_samples = past.size(0)
